@@ -1,0 +1,40 @@
+[project]
+name = "covershift-mvp"
+version = "0.1.0"
+description = "CoverShift MVP (11/20 시연). 명세서 V9 + 추론으로 채운 부분은 ASSUMPTIONS.md"
+requires-python = ">=3.13,<3.15"
+# 버전 고정 근거: prototype_aegra/.venv 에서 10/18 실험이 돈 조합 (aegra 0.10.8 · langgraph 1.2.16 · checkpoint-postgres 3.2.0)
+dependencies = [
+    "aegra-cli==0.10.8",
+    "langgraph==1.2.16",
+    "langgraph-checkpoint-postgres==3.2.0",
+    "langgraph-sdk==0.4.8",
+    "anthropic==1.9.0",
+    "fastapi>=0.143,<0.170",
+    "uvicorn==0.54.0",
+    "psycopg[binary]==3.3.6",
+    "psycopg-pool==3.3.3",
+    "pydantic==2.14.1",
+    "pyjwt>=2.10,<3",
+    "bcrypt>=4.2,<6",
+    "mcp==2.3.0",
+    "python-dotenv==1.2.3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "httpx>=0.28",
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+markers = [
+    "req(id): 이 테스트가 확인하는 요구 번호 (REQUIREMENTS.md). tools/trace.py 가 센다",
+    "llm: 진짜 LLM 을 부른다 (ANTHROPIC_API_KEY 필요, 비용 발생) — 기본 실행에서 빠진다",
+]
+addopts = "-m 'not llm'"
