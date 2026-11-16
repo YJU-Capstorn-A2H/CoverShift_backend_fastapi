@@ -52,6 +52,7 @@ DRAFT_FILE = "month_draft.json"                               # LLM が返した
 PERIOD = {"start": "2026-11-01", "days": 30}                  # 対象期間の開始日と日数
 
 UPPER_LIMIT = 3                                               # 作り直しの上限(LLM は1回で約6〜10分)
+MANAGER_REQUEST_LIMIT = 2                                     # 店長が「やり直し」を頼める回数
 MODEL_NAME = "claude-sonnet-5-5"                              # LLMのモデル名
 LLM = None                                                    # テストのときは、ここにニセの LLM を入れる
 
@@ -115,6 +116,7 @@ class State(TypedDict):
     contact_asked: int         # もう連絡した人数 
     contact_limit: int         # 連絡できる人数の上限(初期値3人)
     contact_log: list          # 連絡の記録 [{staff_id, date, start, end, answer}]
+    blocked_reasons: list      # 承認できない理由(承認画面に出す)
 
 
 
@@ -132,7 +134,7 @@ def collect(state):
 
     print("スキルを評価中...")
     return {"llm_all_staff": llm_all_staff, "draft_store_shift": [], "result": "", "manager_request_count": 0, "instruction": "", "return_count": 0, "upper_limit": 3, "problems": [],
-            "contact_queue": [], "contact_asked": 0, "contact_limit": 3, "contact_log": []}
+            "contact_queue": [], "contact_asked": 0, "contact_limit": 3, "contact_log": [], "blocked_reasons": []}
 
 
 
@@ -430,6 +432,20 @@ def check_closing(assignments, all_staff):                   # 22:30まで残る
     return problems
 
 
+def check_double_booking(assignments):  # 同じ人の勤務が、同じ日に重なっていないか / 같은 사람의 근무가 같은 날 겹치지 않는지
+    works_by_person_and_date = {}       # (スタッフID, 日付) -> その日の勤務の一覧 / 그날의 근무 목록
+    for work in assignments:
+        works_by_person_and_date.setdefault((work["staff_id"], work["date"]), []).append(work)
+
+    problems = []
+    for (staff_id, date), works in works_by_person_and_date.items():
+        works = sorted(works, key=lambda work: to_min(work["start"]))   # 始まりが早い順 / 시작이 빠른 순
+        for earlier, later in zip(works, works[1:]):                    # となりどうしを比べる / 이웃끼리 비교
+            if to_min(later["start"]) < to_min(earlier["end"]):         # 次が前の終わりより先に始まる = 重なり / 겹침
+                problems.append(f"{date} ID{staff_id}の勤務が重なっています({earlier['start']}〜{earlier['end']} と {later['start']}〜{later['end']})")
+    return problems
+
+
 def check_shain_days(assignments, all_staff, off_days):      # 社員の出勤日数が、決まりどおりか
     if off_days is None:                                     # None のときは何も見ない(スイッチOFF)
         return []
@@ -603,9 +619,13 @@ def validate(state: State):   # ルールを守っているか検査する
         problems += check_closing(draft, staff)
         problems += check_shain_days(draft, staff, store["shain_off_days"])
         problems += check_headcount(draft, staff, store["min_headcount"])
+        problems += check_double_booking(draft)
 
         if state["draft_store_shift"] == []:
             state["result"] = "retry"
+        elif problems and state.get("decision") == "edit_saved":   # 店長が直した案は、LLMに作り直させない(編集が消えるため) / 점장이 고친 안은 LLM이 다시 만들지 않게 한다
+            print("店長が直した案に、まだ問題があります。店長の画面に戻します。")
+            return {"result": "limit_reached", "problems": problems}
         elif problems and {problem_key(problem) for problem in problems} == {problem_key(problem) for problem in state.get("problems", [])}:
             print("前回と同じ問題が残っています。これ以上は直りません。")
             return {"result": "limit_reached", "problems": problems}
@@ -742,13 +762,15 @@ def approve(state):
     print("店長の承認を待っています...")
     resp = interrupt({
         "draft_store_shift": state["draft_store_shift"],
-        "ask": "approved | redraft_requested | edit_saved"
-    })
-    
-    if isinstance(resp, str):                                     # 文字列だけで再開しても動くように
+        "ask": "approved | redraft_requested | edit_saved",
+        "problems": state.get("problems", []),                                    # 直っていない問題(参考) 
+        "blocked_reasons": state.get("blocked_reasons", []),                      # 承認できない理由
+        "redraft_left": MANAGER_REQUEST_LIMIT - state["manager_request_count"]})  # あと何回やり直せるか
+
+    if isinstance(resp, str):                                                     # 文字列だけで再開しても動くように
         resp = {"decision": resp}
 
-    update = {"decision": resp["decision"]}
+    update = {"decision": resp["decision"], "blocked_reasons": []}                # 理由は読んだら消す / 이유는 읽었으면 지운다
 
     if resp["decision"] == "redraft_requested":
         update["instruction"] = resp.get("instruction", "")
@@ -761,16 +783,37 @@ def approve(state):
 
 
 # 2-10) 【分岐】店長の決定に応じて、スタッフに連絡するか、自動編成を再度行うかを判断する
-def route_3(state) -> Command[Literal["finalize", "auto_draft", "validate"]]:
+def route_3(state) -> Command[Literal["finalize", "auto_draft", "validate", "approve"]]:
     decision = state["decision"]
+
     if decision == "approved":
+        store = STORE_SETTINGS[state["store_id"]]
+        draft = state["draft_store_shift"]
+
+        # 資格者なし・重複配置が残っていたら承認できない(管理者でも外せない)
+        blocking = check_qualification(draft, state["llm_all_staff"], store["qualification_rules"]) + check_double_booking(draft)
+        if blocking:
+            print("承認できません。案を直してから、もう一度承認してください。")
+            shown = blocking[:20]                                             # 長くなりすぎないよう20件まで / 20건까지
+            if len(blocking) > 20:
+                shown.append(f"(ほか{len(blocking) - 20}件)")
+            return Command(goto="approve", update={"blocked_reasons": shown})
+        
         return Command(goto="finalize")
+
     if decision == "redraft_requested":
+        if state["manager_request_count"] >= MANAGER_REQUEST_LIMIT:           # 店長のやり直しは2回まで / 2번까지
+            print("やり直しの依頼の回数が上限に達しました。")
+            return Command(goto="approve", update={"blocked_reasons": [
+                f"やり直しの依頼は{MANAGER_REQUEST_LIMIT}回までです。案を直して保存するか、承認してください。"]})
+        
         return Command(goto="auto_draft", update={
             "manager_request_count": state["manager_request_count"] + 1,
             "return_count": 0, "contact_asked": 0, "contact_queue": []})
+
     if decision == "edit_saved":
         return Command(goto="validate")
+
     raise ValueError(f"不正な決定: {decision}")
 
 
@@ -837,17 +880,17 @@ if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "start"            # 実行モードを取得する（デフォルトは "start"）
     thread = sys.argv[2] if len(sys.argv) > 2 else "test_resume_1"  # スレッドIDを取得する（デフォルトは "test_resume_1"）
 
-    with PostgresSaver.from_conn_string(DB_URL) as saver:    # データベースに接続する
-        saver.setup()                                        # データベースのテーブルを作成する
-        graph = builder.compile(checkpointer=saver)          # グラフをコンパイルする
-        config = {"configurable": {"thread_id": thread}}     # スレッドIDを設定する
-        start = time.time()                                  # 開始時間を記録する
+    with PostgresSaver.from_conn_string(DB_URL) as saver:           # データベースに接続する
+        saver.setup()                                               # データベースのテーブルを作成する
+        graph = builder.compile(checkpointer=saver)                 # グラフをコンパイルする
+        config = {"configurable": {"thread_id": thread}}            # スレッドIDを設定する
+        start = time.time()                                         # 開始時間を記録する
 
         if mode == "start":
             inp = {"store_id": 101}
         elif mode == "approve":
             inp = Command(resume="approved")
-        elif mode == "contact":                              # 連絡の返事で再開する (例: contact 可能)
+        elif mode == "contact":                                     # 連絡の返事で再開する (例: contact 可能)
             inp = Command(resume=sys.argv[3] if len(sys.argv) > 3 else "可能")
         elif mode == "redraft":
             inp = Command(resume={"decision": "redraft_requested", "instruction": "11/4の9時〜13時を4人以上にしてください"})
