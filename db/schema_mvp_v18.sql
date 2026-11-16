@@ -1,4 +1,4 @@
--- CoverShift MVP schema v17 (2026-11-12) 基準文書(11/08版)を反映＋希望テーブル＋closing_ok＋半休(half_leave)  / 기준 문서(11/08판) 반영 + 희망 테이블 + closing_ok + 반휴(half_leave)
+-- CoverShift MVP schema v18 (2026-11-13) 【提案】v17 ＋ manager_actions・contact_log 基準文書(11/08版)を反映＋希望テーブル＋closing_ok＋半休(half_leave)  / 기준 문서(11/08판) 반영 + 희망 테이블 + closing_ok + 반휴(half_leave)
 
 -- 1) 管理者アカウント
 -- 1) 관리자 계정
@@ -231,3 +231,45 @@ CREATE TABLE validation_violations (
 );
 CREATE INDEX ON validation_violations(draft_id);
 CREATE INDEX ON validation_violations(check_code, work_date);
+
+-- ============================================================
+-- v18 【提案】 追加の2テーブル（v17の15テーブルは変更なし）/ v18 【제안】 추가 2개 테이블(v17의 15개 테이블은 변경 없음)
+-- 根拠: 基準文書 11/07「まだ受け取っていないテーブル」/ 근거: 기준 문서 11/07 「아직 못 받은 테이블」
+-- ※ 列・値は推測を含む（推測です）。アズキの承認と승혁・혁준の確認を待つ。/ ※ 열・값에는 추측이 포함됨(추측입니다). 아즈키 승인과 승혁・혁준 확인 대기.
+-- ============================================================
+
+-- 15) 店長の操作の記録 / 점장 조작 기록（承認・再編成要求・編集保存 / 승인・재편성 요청・편집 저장）
+--     基準文書: 「承認の二重防止はDB制約」「店長指示の枠ルールは manager_actions のJSON欄に保存。collectが読んで State の extra_rules に移す」
+--     기준 문서: 「승인 두 번 방지는 DB 제약」「점장 지시 틀 규칙은 manager_actions의 JSON 칸에 저장. collect가 읽어 State의 extra_rules로 옮긴다」
+CREATE TABLE manager_actions (
+    action_id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    draft_id          BIGINT NOT NULL REFERENCES shift_drafts(draft_id),         -- どの案への操作か / 어느 안에 대한 조작인가
+    manager_id        BIGINT NOT NULL REFERENCES manager_accounts(manager_id),   -- 操作した管理者 / 조작한 관리자
+    action_type       TEXT   NOT NULL CHECK (action_type IN ('approve','redraft_request','edit_save')),
+        -- approve = 承認 / 승인,  redraft_request = 再編成要求 / 재편성 요청(지시 포함 가능),  edit_save = 編集保存 / 편집 저장（State の decision 3値に対応 / State의 decision 3값에 대응）
+    instruction_text  TEXT,    -- 再編成要求のときの店長の指示文（任意）/ 재편성 요청 때 점장의 지시문(선택)
+    rules             JSONB,   -- 指示を枠ルールにした結果（not_available / max_consecutive / min_headcount の配列）。例 / 예: [{"type":"min_headcount","weekday":6,"start":"17:00","end":"22:30","count":5}]
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (action_type = 'redraft_request' OR (instruction_text IS NULL AND rules IS NULL)),   -- 指示は再編成要求のときだけ / 지시는 재편성 요청일 때만
+    CHECK (rules IS NULL OR jsonb_typeof(rules) = 'array')
+);
+-- 同じ案に「承認」は1回だけ（ボタンの二度押しは入口のロックでも止めるが、DBでもう一度止める）
+-- 같은 안에 「승인」은 1번만(버튼 두 번 누름은 입구 락으로도 막지만 DB에서도 한 번 더 막는다)
+CREATE UNIQUE INDEX one_approve_per_draft ON manager_actions(draft_id) WHERE action_type = 'approve';
+CREATE INDEX ON manager_actions(draft_id, created_at);
+
+-- 16) 従業員への連絡の記録 / 직원 연락 기록（MVPはLINEスタブ。送らずに記録・画面表示 / MVP는 LINE 스텁. 보내지 않고 기록・화면 표시）
+--     基準文書: 「従業員連絡(contact)は最後に付け、遅ければ外す」「無応答2時間」「返信ボタン」/ 기준 문서: 「직원 연락(contact)은 맨 마지막에 붙이고 늦으면 뺀다」「무응답 2시간」「답장 버튼」
+CREATE TABLE contact_log (
+    contact_id   BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    draft_id     BIGINT NOT NULL REFERENCES shift_drafts(draft_id),         -- どの案についての連絡か / 어느 안에 대한 연락인가
+    employee_id  BIGINT NOT NULL REFERENCES employees(employee_id),         -- 宛先（名前は持たない）/ 수신자(이름은 갖지 않는다)
+    kind         TEXT   NOT NULL DEFAULT 'shift_notice' CHECK (kind IN ('shift_notice')),   -- 連絡の種類。MVPは1種類（推測です。増やすときはCHECKを直す）/ 연락 종류. MVP는 1종류(추측입니다)
+    channel      TEXT   NOT NULL DEFAULT 'line_stub' CHECK (channel IN ('line_stub','line')),   -- line_stub = 送らず記録・画面表示 / 보내지 않고 기록・화면 표시
+    sent_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    reply        TEXT   CHECK (reply IN ('ok','ng')),   -- 返信ボタンの結果（値は推測です）。NULL = 未返信 / 답장 버튼 결과(값은 추측입니다). NULL = 미응답
+    replied_at   TIMESTAMPTZ,
+    CHECK ((reply IS NULL) = (replied_at IS NULL))
+);
+CREATE INDEX ON contact_log(draft_id, employee_id);
+CREATE INDEX contact_log_waiting ON contact_log(sent_at) WHERE reply IS NULL;   -- 無応答の確認用 / 무응답 확인용
