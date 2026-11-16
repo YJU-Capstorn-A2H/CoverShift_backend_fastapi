@@ -14,6 +14,10 @@ __pycache__/
 .ruff_cache/
 .coverage
 htmlcov/
+app/graph/llm_raw_output.txt
+app/graph/month_draft.json
+app/graph/staff_test.json
+*.bak
 
 # ===== 로그・임시 파일 =====
 *.log
