@@ -5,7 +5,7 @@ from datetime import time
 from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, Field, model_validator
 
-from app.core.db import tx
+from app.core.tx import tx
 from app.core.deps import current_manager
 from app.core.errors import ApiError
 

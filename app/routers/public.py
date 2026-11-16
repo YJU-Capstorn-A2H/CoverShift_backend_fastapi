@@ -8,7 +8,7 @@ from datetime import date, time
 from fastapi import APIRouter
 from pydantic import BaseModel, model_validator
 
-from app.core.db import tx
+from app.core.tx import tx
 from app.core.errors import ApiError
 
 router = APIRouter()

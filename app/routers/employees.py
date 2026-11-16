@@ -5,8 +5,8 @@ import secrets
 from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, Field, model_validator
 
-from app.core.config import link_token_days
-from app.core.db import tx
+from app.core.config import settings
+from app.core.tx import tx
 from app.core.deps import current_manager
 from app.core.errors import ApiError
 
@@ -97,7 +97,7 @@ def issue_link_token(employee_id: int, me: dict = Depends(current_manager)):
         row = conn.execute(
             "UPDATE employees SET link_token = %s, link_token_expires_at = now() + make_interval(days => %s) "
             "WHERE employee_id = %s AND store_id = %s RETURNING link_token_expires_at",
-            (token, link_token_days(), employee_id, me["store_id"])).fetchone()
+            (token, settings.link_token_days, employee_id, me["store_id"])).fetchone()
     if row is None:
         raise ApiError(404, "NOT_FOUND", "従業員が見つかりません / 직원을 찾을 수 없습니다")
     return {"token": token, "expires_at": row["link_token_expires_at"]}

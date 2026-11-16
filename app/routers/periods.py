@@ -6,7 +6,7 @@ from datetime import date
 from fastapi import APIRouter, Depends
 from pydantic import AwareDatetime, BaseModel, Field, field_validator
 
-from app.core.db import try_lock_period, tx
+from app.core.tx import try_lock_period, tx
 from app.core.deps import current_manager
 from app.core.errors import ApiError
 from app.services.graph_gateway import GraphGateway, get_gateway
