@@ -1,5 +1,7 @@
 # CoverShift Backend (FastAPI)
 
+[한국어](README.md) | [日本語](README.ja.md)
+
 ## 필요한 것
 
 - Python 3.13 (아즈키 환경에서 확인함)
