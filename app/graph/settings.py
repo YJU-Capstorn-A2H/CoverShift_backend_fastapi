@@ -4,7 +4,13 @@ import os, json
 from pathlib import Path
 from dotenv import load_dotenv
 
+
+
+
+
+# ===============================================================================
 # 0) 初期設定
+# ===============================================================================
 load_dotenv()                                                 # 環境変数をロードする
 SERVER = str(Path(__file__).parent / "staff_mcp_server.py")   # MCPサーバーのファイル名
 
