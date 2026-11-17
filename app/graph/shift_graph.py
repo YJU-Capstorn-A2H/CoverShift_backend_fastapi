@@ -52,6 +52,8 @@ if __name__ == "__main__":
     
         if mode == "start":
             inp = {"store_id": 101}
+        elif mode == "start_db":                             # DB から読んで始める (例: start_db period-1 1 → 3つ目が period_id)
+            inp = {"period_id": int(sys.argv[3])}
         elif mode == "approve":
             inp = Command(resume="approved")
         elif mode == "contact":                              # 連絡の返事で再開する (例: contact 可能)
@@ -59,7 +61,7 @@ if __name__ == "__main__":
         elif mode == "redraft":
             inp = Command(resume={"decision": "redraft_requested", "instruction": "11/4の9時〜13時を4人以上にしてください"})
         else:
-            raise SystemExit(f"不明なモード: {mode} (start / approve / contact / redraft)")
+            raise SystemExit(f"不明なモード: {mode} (start / start_db / approve / contact / redraft)")
 
         for chunk in graph.stream(inp, config, stream_mode="updates"):                  # グラフをストリームモードで実行する
             for node_name, update in chunk.items():                                     # ノード名と更新内容を表示する

@@ -6,16 +6,24 @@ import copy, json, time
 from typing import Literal
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import Command, interrupt
-from settings import STORE_SETTINGS, MANAGER_REQUEST_LIMIT, llm_all_staff, id_to_name
+from settings import DB_URL, MANAGER_REQUEST_LIMIT, llm_all_staff, id_to_name, get_store
 from state import State
 from routes import route_1, route_2, route_3
 from node.checks import (all_dates, check_coverage, check_qualification, check_requests, check_closing, check_double_booking,
                          check_shain_days, check_headcount, problem_key, make_shortage_report, impossible_cases, build_contact_queue)
 from node.llm import get_llm, extract_json
+from node.db import load_period_data, load_employee_name
+from node.convert import split_names
 from node.prompts import (rules, make_qualification_text, make_days_text,
                           make_headcount_text, make_problem_text, make_instruction_text, make_prev_draft_text)
 # import asyncio                          # MCP を使うときに戻す
 # from mcp_call import call_mcp_tool
+
+
+def get_name(state, staff_id):    # 従業員の名前。DB から読んだときは DB から探す(名前は State に入れない)。無ければ staff_data.json の表から
+    if state.get("period_id"):
+        return load_employee_name(DB_URL, staff_id) or f"ID{staff_id}"
+    return id_to_name.get(staff_id, f"ID{staff_id}")
 
 
 # ===============================================================================
@@ -32,7 +40,17 @@ def collect(state):
     # assert mcp_staff == llm_all_staff, "MCPサーバーから取得したスタッフデータと、初期データが一致しません。"  # debug用のアサーション
 
     print("スキルを評価中...")
-    return {"llm_all_staff": llm_all_staff, "draft_store_shift": [], "result": "", "manager_request_count": 0, "instruction": "", "return_count": 0, "upper_limit": 3, "problems": [],
+    db_update = {}                                          # DB から読んだときだけ入る(store_id・period・store_settings)
+    staff_for_llm = llm_all_staff                           # period_id が無いときは、今までどおり staff_data.json のデータ
+    if state.get("period_id"):                              # period_id があれば DB から読む(B1)
+        data = load_period_data(DB_URL, state["period_id"])
+        if state.get("store_id") not in (None, data["store_id"]):
+            raise ValueError(f"store_id={state['store_id']} と period_id={state['period_id']} の店が違います(DB では store_id={data['store_id']})")
+        _, staff_for_llm = split_names(data["staff_list"])  # 名前は State に入れない(必要なときに DB から探す)
+        db_update = {"store_id": data["store_id"], "period": data["period"], "store_settings": data["store_settings"]}
+    elif not llm_all_staff:
+        raise ValueError("period_id がなく、staff_data.json も見つかりません")
+    return {**db_update, "llm_all_staff": staff_for_llm, "draft_store_shift": [], "result": "", "manager_request_count": 0, "instruction": "", "return_count": 0, "upper_limit": 3, "problems": [],
             "contact_queue": [], "contact_asked": 0, "contact_limit": 3, "contact_log": [], "blocked_reasons": []}
 
 
@@ -42,7 +60,7 @@ def skill_check(state):
     print("スキルチェック中...")
     for staff in state["llm_all_staff"]:                 
         if staff["staff_skill"] != staff["admin_rate"]:  
-            print(f"{id_to_name[staff['staff_id']]}のスキルが違います。店長に知らせます。") 
+            print(f"{get_name(state, staff['staff_id'])}のスキルが違います。店長に知らせます。") 
     return {}
 
 
@@ -60,7 +78,7 @@ def auto_draft(state: State):
     """
     print("自動編成中...")
     state["return_count"] += 1
-    store = STORE_SETTINGS[state["store_id"]]
+    store = get_store(state)
     prompt = rules + make_qualification_text(store["qualification_rules"]) + make_days_text(store["shain_off_days"], len(all_dates(state.get("period")))) + make_headcount_text(store["min_headcount"]) + make_problem_text(state.get("problems", [])) + "\n【スタッフのデータ(JSON)】\n" + json.dumps(state["llm_all_staff"], ensure_ascii=False) + make_instruction_text(state.get("instruction", "")) + make_prev_draft_text(state.get("draft_store_shift", []))
     llm = get_llm()
     llm_start_time = time.time()
@@ -118,7 +136,7 @@ def validate(state: State):
 
     else:
         # 検査ロジック実装
-        store = STORE_SETTINGS[state["store_id"]]
+        store = get_store(state)
         draft = state["draft_store_shift"]
         staff = state["llm_all_staff"]
         dates = all_dates(state.get("period"))                  # この月の日付(state["period"] が無ければ settings.PERIOD)
@@ -212,7 +230,7 @@ def contact(state) -> Command[Literal["validate", "contact", "manual_draft"]]:
     queue = state["contact_queue"]
     target = queue[0]                                        # いま聞く人 
     staff_id = target["staff_id"]
-    name = id_to_name.get(staff_id, f"ID{staff_id}")
+    name = get_name(state, staff_id)
     print(f"スタッフに連絡中... {name}さん {target['date']} {target['start']}〜{target['end']}")
 
     # ここで止まる。返事(LINEのボタン)で再開する

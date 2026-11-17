@@ -2,7 +2,7 @@
 #   分岐は3つ: route_1 (2-2) / route_2 (2-6) / route_3 (2-10)
 from typing import Literal
 from langgraph.types import Command
-from settings import STORE_SETTINGS, MANAGER_REQUEST_LIMIT
+from settings import get_store, MANAGER_REQUEST_LIMIT
 from node.checks import all_dates, check_qualification, check_double_booking
 
 
@@ -37,7 +37,7 @@ def route_3(state) -> Command[Literal["finalize", "auto_draft", "validate", "app
     decision = state["decision"]
 
     if decision == "approved":
-        store = STORE_SETTINGS[state["store_id"]]
+        store = get_store(state)
         draft = state["draft_store_shift"]
 
         # 資格者なし・重複配置が残っていたら承認できない(管理者でも外せない)

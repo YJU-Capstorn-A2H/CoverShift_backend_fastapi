@@ -10,7 +10,7 @@ load_dotenv()                                                 # 環境変数を�
 SERVER = str(Path(__file__).parent / "staff_mcp_server.py")   # MCPサーバーのファイル名
 
 DB_URL = os.environ["DATABASE_URL"]                           # DBの接続URL
-STAFF_FILE = os.environ.get("STAFF_FILE", "staff_data.json")  # スタッフデータのjsonファイル名(いまのフォルダから探す。app\graph の中で実行すること)
+STAFF_FILE = os.environ.get("STAFF_FILE", str(Path(__file__).parent / "staff_data.json"))   # スタッフデータのjsonファイル名(既定は、このファイルと同じフォルダ)
 DRAFT_FILE = "month_draft.json"                               # LLM が返した案の保存先
 
 PERIOD = {"start": "2026-11-01", "days": 30}                  # 対象期間の開始日と日数
@@ -39,8 +39,10 @@ STORE_SETTINGS = {
 }
 
 
-with open(STAFF_FILE, encoding="utf-8") as staff_file:                 # スタッフデータを読み込む
-    STAFF = json.load(staff_file)
+STAFF = []                                                    # staff_data.json が無くてもよい(DB から読むときは使わない)
+if os.path.exists(STAFF_FILE):
+    with open(STAFF_FILE, encoding="utf-8") as staff_file:    # スタッフデータを読み込む
+        STAFF = json.load(staff_file)
 
 id_to_name = {}                                               # 名前とIDの対応表の辞書                            
 for staff in STAFF:
@@ -54,3 +56,7 @@ for staff in STAFF:
         if key != "staff_name":                               # 名前がある場合
             item[key] = value                                 # 名前を削除して、IDだけを残す
     llm_all_staff.append(item)                                # 名前を削除したデータをリストに追加する
+
+
+def get_store(state):    # その State の店の設定。DB から読んだ設定(store_settings)があればそれ、無ければ STORE_SETTINGS から
+    return state.get("store_settings") or STORE_SETTINGS[state["store_id"]]

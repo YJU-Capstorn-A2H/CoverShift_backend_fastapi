@@ -8,6 +8,8 @@ from typing import TypedDict
 class State(TypedDict):
     store_id: int              # 店舗ID
     period: dict               # 対象の月 {"start": "2026-11-01", "days": 30}。無ければ settings.PERIOD(B1 で DB の shift_periods から入れる)
+    period_id: int             # DB の shift_periods の ID。あれば collect が DB から読む(無ければ staff_data.json から)
+    store_settings: dict       # DB から読んだ店の設定 {min_headcount, qualification_rules, shain_off_days}。無ければ STORE_SETTINGS[store_id]
     llm_all_staff: list        # 全員のLLMに渡すデータ
     draft_store_shift: list    # 店全体の月間シフト案
     result: str                # validate の結果: valid / retry / no_staff / limit_reached (routes.py の route_2 が見る)
