@@ -103,9 +103,9 @@ period_id, ids = make_test_data()
 try:
     # --- D1) DB から読む ------------------------------------------------------------------
     data = db.load_period_data(TEST_URL, period_id)
-    names = [staff["staff_name"] for staff in data["staff_list"]]
-    by_name = {staff["staff_name"]: staff for staff in data["staff_list"]}
-    check("D1a: 店7 の 3人だけ読む(別の店の人は入らない)", names == ["社員A", "社員B", "バイトC"])
+    by_id = {staff["staff_id"]: staff for staff in data["staff_list"]}
+    by_name = {name: by_id.get(ids[name]) for name in ids}       # テストで見やすいように、作った名前 → 読んだデータ
+    check("D1a: 店7 の 3人だけ読む(別の店の人は入らない)", [staff["staff_id"] for staff in data["staff_list"]] == [ids["社員A"], ids["社員B"], ids["バイトC"]])
     check("D1b: store_id と period(12月・31日)", data["store_id"] == 7 and data["period"] == {"start": "2026-12-01", "days": 31})
     check("D1c: バイトC の希望は 12/2 だけ(前の月・次の月は入らない)", by_name["バイトC"]["requests"] == [{"date": "2026-12-02", "start": "13:30", "end": "22:00"}])
     check("D1d: 社員A の希望休が入る", by_name["社員A"]["requests"] == [{"date": "2026-12-24", "off": True}])
@@ -120,7 +120,7 @@ try:
         check("D2: 無い period_id はエラー", False)
     except ValueError:
         check("D2: 無い period_id はエラー", True)
-    check("D3: 名前を1人分だけ探せる / 無い ID は None", db.load_employee_name(TEST_URL, ids["バイトC"]) == "バイトC" and db.load_employee_name(TEST_URL, 999999) is None)
+    check("D3: 名前は読まない(staff_name は全員 None)", all(staff["staff_name"] is None for staff in data["staff_list"]))
 
     # --- D4) collect ----------------------------------------------------------------------
     update = graph_module.collect({"period_id": period_id})
@@ -135,7 +135,7 @@ try:
     check("D6: period_id が無ければ、今までどおり staff_data.json(テストでは staff_test.json)", graph_module.collect({"store_id": 101})["llm_all_staff"][0]["staff_id"] == 1)
 
     # --- D7) 名前 -------------------------------------------------------------------------
-    check("D7a: get_name は、period_id があれば DB から", graph_module.get_name({"period_id": period_id}, ids["バイトC"]) == "バイトC")
+    check("D7a: get_name は、period_id があれば「ID」の形(DB を見ない)", graph_module.get_name({"period_id": period_id}, ids["バイトC"]) == f"ID{ids['バイトC']}")
     check("D7b: get_name は、period_id が無ければ staff_data.json の表から", graph_module.get_name({}, 1) == "X" and graph_module.get_name({}, 99) == "ID99")
 
     # --- D8) グラフを最後まで動かす(store_id=7 は settings.STORE_SETTINGS に無い店) ---------------

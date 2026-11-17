@@ -12,7 +12,7 @@ from routes import route_1, route_2, route_3
 from node.checks import (all_dates, check_coverage, check_qualification, check_requests, check_closing, check_double_booking,
                          check_shain_days, check_headcount, problem_key, make_shortage_report, impossible_cases, build_contact_queue)
 from node.llm import get_llm, extract_json
-from node.db import load_period_data, load_employee_name
+from node.db import load_period_data
 from node.convert import split_names
 from node.prompts import (rules, make_qualification_text, make_days_text,
                           make_headcount_text, make_problem_text, make_instruction_text, make_prev_draft_text)
@@ -20,9 +20,9 @@ from node.prompts import (rules, make_qualification_text, make_days_text,
 # from mcp_call import call_mcp_tool
 
 
-def get_name(state, staff_id):    # 従業員の名前。DB から読んだときは DB から探す(名前は State に入れない)。無ければ staff_data.json の表から
+def get_name(state, staff_id):    # 従業員の表示名。DB から読んだときは名前を読まないので「ID3」の形(名前は画面・API 側が staff_id から出す)。無ければ staff_data.json の表から
     if state.get("period_id"):
-        return load_employee_name(DB_URL, staff_id) or f"ID{staff_id}"
+        return f"ID{staff_id}"
     return id_to_name.get(staff_id, f"ID{staff_id}")
 
 
@@ -46,7 +46,7 @@ def collect(state):
         data = load_period_data(DB_URL, state["period_id"])
         if state.get("store_id") not in (None, data["store_id"]):
             raise ValueError(f"store_id={state['store_id']} と period_id={state['period_id']} の店が違います(DB では store_id={data['store_id']})")
-        _, staff_for_llm = split_names(data["staff_list"])  # 名前は State に入れない(必要なときに DB から探す)
+        _, staff_for_llm = split_names(data["staff_list"])  # 名前は State に入れない(DB からはそもそも読まない)
         db_update = {"store_id": data["store_id"], "period": data["period"], "store_settings": data["store_settings"]}
     elif not llm_all_staff:
         raise ValueError("period_id がなく、staff_data.json も見つかりません")

@@ -60,7 +60,7 @@ def make_staff_list(employee_rows, submission_rows):
     for row in sorted(employee_rows, key=lambda row: row["employee_id"]):
         staff_list.append({
             "staff_id": row["employee_id"],
-            "staff_name": row["name"],
+            "staff_name": row.get("name"),           # DB から読むときは name 列を読まないので None
             "employment": "社員" if row["is_regular"] else "バイト",
             "qualification": QUALIFICATION_NAME if row["has_qualification"] else None,
             "staff_skill": None,

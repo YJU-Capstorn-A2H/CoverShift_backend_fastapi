@@ -9,7 +9,7 @@ from node.convert import make_period, make_staff_list, make_store_settings
 
 def load_period_data(db_url, period_id):
     """period_id(shift_periods の行)の1か月分に必要なデータを、まとめて読む。
-    戻り値: {"store_id", "period", "store_settings", "staff_list"}  (staff_list は名前つき。名前は State に入れないこと)
+    戻り値: {"store_id", "period", "store_settings", "staff_list"}  (名前は読まない。staff_list の staff_name は None)
     読んでいる間に他の人が書き換えても、同じ時点のデータだけを見るようにする(REPEATABLE READ・読み取り専用)"""
     with psycopg.connect(db_url, row_factory=dict_row) as conn:
         conn.isolation_level = psycopg.IsolationLevel.REPEATABLE_READ
@@ -29,7 +29,7 @@ def load_period_data(db_url, period_id):
             "SELECT weekday, start_time, end_time, min_headcount, min_qualified FROM store_time_rules "
             "WHERE store_id = %s ORDER BY weekday, start_time", (store_id,)).fetchall()
         employee_rows = conn.execute(
-            "SELECT employee_id, name, is_regular, has_qualification, closing_ok FROM employees "
+            "SELECT employee_id, is_regular, has_qualification, closing_ok FROM employees "    # name は読まない(名前を見られないロールで読むため。基準文書 11/07)
             "WHERE store_id = %s ORDER BY employee_id", (store_id,)).fetchall()
         submission_rows = conn.execute(
             "SELECT a.employee_id, a.work_date, a.kind, a.start_time, a.end_time FROM availability_submissions a "
@@ -48,9 +48,3 @@ def load_period_data(db_url, period_id):
         "staff_list": make_staff_list(employee_rows, submission_rows),
     }
 
-
-def load_employee_name(db_url, employee_id):    # 従業員の名前を1人分だけ探す(連絡の画面に出すときだけ使う。見つからなければ None)
-    with psycopg.connect(db_url, row_factory=dict_row) as conn:
-        conn.read_only = True
-        row = conn.execute("SELECT name FROM employees WHERE employee_id = %s", (employee_id,)).fetchone()
-    return row["name"] if row else None
