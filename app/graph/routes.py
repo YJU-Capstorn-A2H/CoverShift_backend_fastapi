@@ -3,7 +3,7 @@
 from typing import Literal
 from langgraph.types import Command
 from settings import STORE_SETTINGS, MANAGER_REQUEST_LIMIT
-from node.checks import check_qualification, check_double_booking
+from node.checks import all_dates, check_qualification, check_double_booking
 
 
 # 2-2) route_1 -- スキルチェックが必要か決める (collect の次)
@@ -41,7 +41,7 @@ def route_3(state) -> Command[Literal["finalize", "auto_draft", "validate", "app
         draft = state["draft_store_shift"]
 
         # 資格者なし・重複配置が残っていたら承認できない(管理者でも外せない)
-        blocking = check_qualification(draft, state["llm_all_staff"], store["qualification_rules"]) + check_double_booking(draft)
+        blocking = check_qualification(draft, state["llm_all_staff"], store["qualification_rules"], all_dates(state.get("period"))) + check_double_booking(draft)
         if blocking:
             print("承認できません。案を直してから、もう一度承認してください。")
             shown = blocking[:20]                                             # 長くなりすぎないよう20件まで

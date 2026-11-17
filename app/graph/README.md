@@ -178,6 +178,7 @@ Command(resume={"decision": "edit_saved", "assignments": [ {...}, ... ]})   # �
 | 키                                                                  | 의미                                                                |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | `store_id`                                                          | 점포 ID                                                             |
+| `period` | 대상 월 `{"start": "2026-11-01", "days": 30}`. 없으면 `settings.PERIOD`(B1에서 DB의 `shift_periods`로부터 넣음) |
 | `llm_all_staff`                                                     | 전원의 데이터(이름은 삭제되어 있음)                                 |
 | `draft_store_shift`                                                 | 점포 전체의 월간 시프트 안                                          |
 | `result`                                                            | `validate`의 결과(`valid` / `retry` / `no_staff` / `limit_reached`) |
@@ -211,7 +212,7 @@ python test_contact.py                      # 연락 흐름           A~E
 ## 10. 현재 미완성인 부분(솔직하게)
 
 - `collect`는 DB가 아니라 `settings.py`가 읽은 `staff_data.json`을 넘긴다(B1에서 DB 읽기로 교체). MCP 호출은 주석 처리 상태(D5).
-- 점포는 `STORE_SETTINGS`의 101번, 기간은 `PERIOD`(2026-11, 30일)로 고정(테스트용 데이터). 검사 코드에도 `2026-11-`과 「30일」이 직접 적혀 있다.
+- 점포는 `STORE_SETTINGS`의 101번, 기간은 `PERIOD`(2026-11, 30일)로 고정(테스트용 데이터). 검사・프롬프트는 월의 일수(28~31일)와 요일별 규칙(규칙의 `weekdays`: 1=월~7=일. 없으면 매일)에 대응 완료. `State`의 `period`를 넘기면 그 달 기준으로 동작한다(B1에서 DB로부터 넣음).
 - `settings.py`는 `staff_data.json`을 **현재 폴더에서** 찾는다. `app\graph` 안에서 실행하지 않으면 `FileNotFoundError`가 발생한다(B1에서 해소 예정).
 - `finalize`(확정 저장)와 `send_final_shift`(LINE 통지)는 메시지만 돌려주는 임시 구현이다(B8/B9).
 - `contact`는 LINE 전송이 없고, 답변을 받는 부분만 있다.

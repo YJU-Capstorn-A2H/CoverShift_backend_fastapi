@@ -1,5 +1,16 @@
 # 3-3) node/prompts.py -- LLM に渡す文章(プロンプト)だけを書くファイル。ルールの検査は node/checks.py
 import json
+from settings import PERIOD
+
+
+WEEKDAY_NAMES = ["月", "火", "水", "木", "金", "土", "日"]       # 1=月 ... 7=日 (DB の weekday と同じ)
+
+
+def make_weekday_text(rule):                 # ルールに "weekdays" があるとき、「月・土のみ: 」を作る(無ければ空)
+    weekdays = rule.get("weekdays")
+    if not weekdays:
+        return ""
+    return "・".join(WEEKDAY_NAMES[day - 1] for day in sorted(weekdays)) + "のみ: "
 
 
 # 【LLM】AIが編成案を作る(auto_draft が使う)
@@ -53,16 +64,16 @@ def make_qualification_text(qual_rules):     # 資格ルールの文章を作る
     text = "\n【資格のルール(必ず守る)】\n"
     for rule in qual_rules:
         names = "、".join(rule["qualification"])
-        text += f"- {rule['start']}〜{rule['end']}は、qualification が「{names}」のどれかの人が、どの30分の区切りにも{rule['min']}人以上いること。\n"
+        text += f"- {make_weekday_text(rule)}{rule['start']}〜{rule['end']}は、qualification が「{names}」のどれかの人が、どの30分の区切りにも{rule['min']}人以上いること。\n"
     
     return text
 
 
-def make_days_text(off_days):                # 社員の出勤日数の文章を作る
+def make_days_text(off_days, days=None):     # 社員の出勤日数の文章を作る(days = その月の日数。無ければ settings.PERIOD)
     if off_days is None:                     # None のときは、文を作らない(スイッチOFF)
         return ""
     
-    work_days = 30 - off_days
+    work_days = (days or PERIOD["days"]) - off_days
     return (f"\n【社員の出勤日数(必ず守る)】\n"
             f"- 社員(employment が 社員 の人)は、1か月の公休(休み)が{off_days}日です。出勤は、ちょうど{work_days}日にすること。\n"
             f"- requests に off と書かれた日は、公休にあててよい。\n"
@@ -91,7 +102,7 @@ def make_headcount_text(rules):              # 時間帯ごとの最低人数の
     
     text = "\n【時間帯ごとの最低人数(必ず守る)】\n"
     for rule in rules:
-        text += f"- {rule['start']}〜{rule['end']}は、同時にいる人数を{rule['min']}人以上にすること。\n"
+        text += f"- {make_weekday_text(rule)}{rule['start']}〜{rule['end']}は、同時にいる人数を{rule['min']}人以上にすること。\n"
         
         if rule.get("exclude"):
             text += f"  (qualification が{'・'.join(rule['exclude'])}の人は、この時間帯の人数に数えない)\n"

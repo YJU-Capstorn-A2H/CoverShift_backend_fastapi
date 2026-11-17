@@ -9,7 +9,7 @@ from langgraph.types import Command, interrupt
 from settings import STORE_SETTINGS, MANAGER_REQUEST_LIMIT, llm_all_staff, id_to_name
 from state import State
 from routes import route_1, route_2, route_3
-from node.checks import (check_coverage, check_qualification, check_requests, check_closing, check_double_booking,
+from node.checks import (all_dates, check_coverage, check_qualification, check_requests, check_closing, check_double_booking,
                          check_shain_days, check_headcount, problem_key, make_shortage_report, impossible_cases, build_contact_queue)
 from node.llm import get_llm, extract_json
 from node.prompts import (rules, make_qualification_text, make_days_text,
@@ -40,11 +40,9 @@ def collect(state):
 #   スキルと管理者評価が違う人を表示するだけ。そのまま auto_draft へ進む
 def skill_check(state):
     print("スキルチェック中...")
-
     for staff in state["llm_all_staff"]:                 
         if staff["staff_skill"] != staff["admin_rate"]:  
             print(f"{id_to_name[staff['staff_id']]}のスキルが違います。店長に知らせます。") 
-
     return {}
 
 
@@ -63,10 +61,10 @@ def auto_draft(state: State):
     print("自動編成中...")
     state["return_count"] += 1
     store = STORE_SETTINGS[state["store_id"]]
-    prompt = rules + make_qualification_text(store["qualification_rules"]) + make_days_text(store["shain_off_days"]) + make_headcount_text(store["min_headcount"]) + make_problem_text(state.get("problems", [])) + "\n【スタッフのデータ(JSON)】\n" + json.dumps(state["llm_all_staff"], ensure_ascii=False) + make_instruction_text(state.get("instruction", "")) + make_prev_draft_text(state.get("draft_store_shift", []))
+    prompt = rules + make_qualification_text(store["qualification_rules"]) + make_days_text(store["shain_off_days"], len(all_dates(state.get("period")))) + make_headcount_text(store["min_headcount"]) + make_problem_text(state.get("problems", [])) + "\n【スタッフのデータ(JSON)】\n" + json.dumps(state["llm_all_staff"], ensure_ascii=False) + make_instruction_text(state.get("instruction", "")) + make_prev_draft_text(state.get("draft_store_shift", []))
     llm = get_llm()
     llm_start_time = time.time()
-    res = llm.invoke(prompt)                               # ← ここで時間がかかる
+    res = llm.invoke(prompt)                                       # ← ここで時間がかかる
     print(f"LLM呼び出し: {time.time() - llm_start_time:.0f}秒")
     print(res.usage_metadata)
     print(res.response_metadata.get("stop_reason"))
@@ -74,7 +72,7 @@ def auto_draft(state: State):
     if res.response_metadata.get("stop_reason") == "max_tokens":
         raise RuntimeError("出力の上限に達しました。max_tokens を上げてください")
     text = ""
-    
+
     if isinstance(res.content, str):
         text = res.content
     else:
@@ -90,10 +88,10 @@ def auto_draft(state: State):
         print("返事の先頭:", repr(text[:100]))
     print("返事の末尾:", repr(text[-100:]))
 
-    data = extract_json(text)                              # 返事から、編成案のJSONだけを取り出す
+    data = extract_json(text)                                                # 返事から、編成案のJSONだけを取り出す
     print(f"編成の件数: {len(data['assignments'])}")
 
-    with open("month_draft.json", "w", encoding="utf-8") as output_file:      # 案をJSONで保存(デバッグ用)
+    with open("month_draft.json", "w", encoding="utf-8") as output_file:     # 案をJSONで保存(デバッグ用)
         json.dump(data, output_file, ensure_ascii=False)
 
     return {"draft_store_shift": data["assignments"], "return_count": state["return_count"]}
@@ -123,14 +121,15 @@ def validate(state: State):
         store = STORE_SETTINGS[state["store_id"]]
         draft = state["draft_store_shift"]
         staff = state["llm_all_staff"]
+        dates = all_dates(state.get("period"))                  # この月の日付(state["period"] が無ければ settings.PERIOD)
 
         problems = []
-        problems += check_coverage(draft, staff)                                   # どの30分にも社員がいるか
-        problems += check_qualification(draft, staff, store["qualification_rules"])    # 資格者が足りているか
+        problems += check_coverage(draft, staff, dates)                                   # どの30分にも社員がいるか
+        problems += check_qualification(draft, staff, store["qualification_rules"], dates)    # 資格者が足りているか
         problems += check_requests(draft, staff)                                   # パート・バイトが申請のない日に入っていないか
         problems += check_closing(draft, staff)                                    # 22:30まで残るのは closing_ok の人だけ
-        problems += check_shain_days(draft, staff, store["shain_off_days"])            # 社員の出勤日数
-        problems += check_headcount(draft, staff, store["min_headcount"])              # 時間帯ごとの最低人数
+        problems += check_shain_days(draft, staff, store["shain_off_days"], dates)            # 社員の出勤日数
+        problems += check_headcount(draft, staff, store["min_headcount"], dates)              # 時間帯ごとの最低人数
         problems += check_double_booking(draft)                                    # 同じ人の勤務の重なり
 
         if state["draft_store_shift"] == []:                    # 案が空 -> 作り直し
@@ -154,7 +153,7 @@ def validate(state: State):
         # 【分岐】検査結果
         if state["result"] == "valid":
             print("編成案は有効です。")
-            shortage = make_shortage_report(store["min_headcount"], state["llm_all_staff"])
+            shortage = make_shortage_report(store["min_headcount"], state["llm_all_staff"], dates)
             if shortage:
                 print("【人が足りない日(管理者に相談してください)】")
                 print("\n".join(shortage))
@@ -165,10 +164,10 @@ def validate(state: State):
 
             if shortage and asked_count == 0 and not queue:  # 最初の1回だけ、候補の順番を作る
                 already_asked = {(log_item["staff_id"], log_item["date"]) for log_item in state.get("contact_log", [])}
-                queue = build_contact_queue(store["min_headcount"], state["llm_all_staff"], draft, already_asked)
+                queue = build_contact_queue(store["min_headcount"], state["llm_all_staff"], draft, already_asked, dates)
 
             still_short = {(date, rule["start"]) for date, rule, max_people
-                           in impossible_cases(store["min_headcount"], state["llm_all_staff"])}
+                           in impossible_cases(store["min_headcount"], state["llm_all_staff"], dates)}
             queue = [item for item in queue if (item["date"], item["start"]) in still_short]   # もう足りた日は聞かない
             
             if queue and asked_count < state.get("contact_limit", 3):
@@ -206,7 +205,7 @@ def manual_draft(state):
 #   可能   -> その人の希望と案に足して、validate へ戻る
 #   断り   -> 次の人へ (上限3人。尽きたら管理者の手動編成へ)
 #   不確か -> 今回は「断り」と同じ扱い。先回りの連絡(prefetch)は未実装
-CONTACT_ANSWERS = ("可能", "断り", "不確か")
+CONTACT_ANSWERS = ("可能", "断り", "不確か")   # 連絡の返事の3種類(ここだけで定義する)
 
 
 def contact(state) -> Command[Literal["validate", "contact", "manual_draft"]]:

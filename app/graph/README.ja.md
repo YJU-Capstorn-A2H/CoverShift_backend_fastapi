@@ -178,6 +178,7 @@ Command(resume={"decision": "edit_saved", "assignments": [ {...}, ... ]})   # �
 | キー                                                                | 意味                                                                |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | `store_id`                                                          | 店舗ID                                                              |
+| `period` | 対象の月 `{"start": "2026-11-01", "days": 30}`。無ければ `settings.PERIOD`(B1 で DB の `shift_periods` から入れる) |
 | `llm_all_staff`                                                     | 全員のデータ(名前は消してある)                                      |
 | `draft_store_shift`                                                 | 店全体の月間シフト案                                                |
 | `result`                                                            | `validate` の結果(`valid` / `retry` / `no_staff` / `limit_reached`) |
@@ -211,7 +212,7 @@ python test_contact.py                      # 連絡の流れ            A〜E
 ## 10. 今は未完成のところ(正直に)
 
 - `collect` は、DBではなく `settings.py` が読んだ `staff_data.json` を渡している(B1 でDB読み込みに置き換える)。MCP呼び出しはコメントアウト中(D5)。
-- 店舗は `STORE_SETTINGS` の 101 番、期間は `PERIOD`(2026-11、30日)に固定(テスト用データ)。検査のコードにも `2026-11-` と「30日」が直接書いてある。
+- 店舗は `STORE_SETTINGS` の 101 番、期間は `PERIOD`(2026-11、30日)に固定(テスト用データ)。検査・プロンプトは、月の日数(28〜31日)と、曜日つきルール(ルールの `weekdays`: 1=月〜7=日。無ければ毎日)に対応済み。`State` の `period` を渡せば、その月で動く(B1 で DB から入れる)。
 - `settings.py` は `staff_data.json` を**今いるフォルダから**探す。`app\graph` の中で実行しないと `FileNotFoundError`(B1 でなくなる予定)。
 - `finalize`(確定の保存)と `send_final_shift`(LINE通知)は、メッセージを返すだけの仮実装(B8/B9)。
 - `contact` は、LINE送信がなく、返事を受け取る所だけ。
