@@ -8,12 +8,13 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.types import Command, interrupt
 from settings import DB_URL, MANAGER_REQUEST_LIMIT, llm_all_staff, id_to_name, get_store
 from state import State
-from routes import route_1, route_2, route_3
+from routes import route_2, route_3
 from node.checks import (all_dates, check_coverage, check_qualification, check_requests, check_closing, check_double_booking,
                          check_shain_days, check_headcount, problem_key, make_shortage_report, impossible_cases, build_contact_queue)
 from node.llm import get_llm, extract_json
 from node.db import load_period_data
 from node.convert import split_names
+from node.line import send_line, make_final_text
 from node.prompts import (rules, make_qualification_text, make_days_text,
                           make_headcount_text, make_problem_text, make_instruction_text, make_prev_draft_text)
 # import asyncio                          # MCP を使うときに戻す
@@ -30,7 +31,7 @@ def get_name(state, staff_id):    # 従業員の表示名。DB から読んだ�
 # 2) グラフ作成
 # ==============================================================================
 
-# 2-1) collect -- 最初に1回だけ。スタッフの希望・スキルを読んで、State を初期化する
+# 2-1) collect -- 最初に1回だけ。スタッフの希望を読んで、State を初期化する
 #   出力: llm_all_staff(全員のデータ)と、各カウンターの初期値
 #   いまは settings.py のデータをそのまま渡す(B1 で DB から、D5 で MCP から読む形に置き換える)
 def collect(state):
@@ -39,7 +40,6 @@ def collect(state):
     # mcp_staff = data["staff"]                                                                           # MCPサーバーから取得したスタッフデータ
     # assert mcp_staff == llm_all_staff, "MCPサーバーから取得したスタッフデータと、初期データが一致しません。"  # debug用のアサーション
 
-    print("スキルを評価中...")
     db_update = {}                                          # DB から読んだときだけ入る(store_id・period・store_settings)
     staff_for_llm = llm_all_staff                           # period_id が無いときは、今までどおり staff_data.json のデータ
     if state.get("period_id"):                              # period_id があれば DB から読む(B1)
@@ -52,16 +52,6 @@ def collect(state):
         raise ValueError("period_id がなく、staff_data.json も見つかりません")
     return {**db_update, "llm_all_staff": staff_for_llm, "draft_store_shift": [], "result": "", "manager_request_count": 0, "instruction": "", "return_count": 0, "upper_limit": 3, "problems": [],
             "contact_queue": [], "contact_asked": 0, "contact_limit": 3, "contact_log": [], "blocked_reasons": []}
-
-
-# 2-3) skill_check -- 未確認を「要指導」とみなして、店長に知らせる(止まらない)
-#   スキルと管理者評価が違う人を表示するだけ。そのまま auto_draft へ進む
-def skill_check(state):
-    print("スキルチェック中...")
-    for staff in state["llm_all_staff"]:                 
-        if staff["staff_skill"] != staff["admin_rate"]:  
-            print(f"{get_name(state, staff['staff_id'])}のスキルが違います。店長に知らせます。") 
-    return {}
 
 
 # 2-4) auto_draft -- LLM が、月間の編成案を作る(1回で約6〜10分)
@@ -117,7 +107,7 @@ def auto_draft(state: State):
 
 # 2-5) validate -- 編成案がルールを守っているか検査する(コードだけ。LLM は使わない)
 #   入力: draft_store_shift(案) / llm_all_staff(希望)
-#   出力: result = valid(OK) / retry(作り直し) / no_staff(人が足りない日あり) / limit_reached(手動へ)
+#   出力: result = valid(OK) / retry(作り直し) / no_staff(人が足りない日あり) / limit_reached(承認画面へ)
 #         problems = 見つかった問題の一覧
 #   次の行き先: route_2 (2-6) が result を見て決める
 #   判定の順番: ⓪検査回数が上限超え→limit_reached ①案が空→retry ②店長が直した案に問題→limit_reached(LLMは呼ばない)
@@ -130,7 +120,7 @@ def validate(state: State):
     # 【分岐】検査回数が上限に達しているかどうかを判断する
     print(f"検査回数: {state['return_count']}/{state['upper_limit']}")
     if state["return_count"] > state["upper_limit"] :
-        print("編成案の検査回数が上限に達しました。手動編成を行います。")
+        print("編成案の検査回数が上限に達しました。承認画面で、店長に直してもらいます。")
         state["result"] = "limit_reached"
         return {"result": state['result']}
 
@@ -159,7 +149,7 @@ def validate(state: State):
             print("前回と同じ問題が残っています。これ以上は直りません。")
             return {"result": "limit_reached", "problems": problems}
         elif problems and state["return_count"] >= state["upper_limit"]:   # 作り直しの上限
-            print("編成案の検査回数が上限に達しました。手動編成を行います。")
+            print("編成案の検査回数が上限に達しました。承認画面で、店長に直してもらいます。")
             return {"result": "limit_reached", "problems": problems}
         elif problems:                                         # 問題あり -> 作り直し
             print(problems)
@@ -197,7 +187,7 @@ def validate(state: State):
             print("編成案に必要なスタッフが不足しています。再度編成を行います。")
             return {"result": state['result']}
         elif state["result"] == "limit_reached":
-            print("編成案の検査回数が上限に達しました。手動編成を行います。")
+            print("編成案の検査回数が上限に達しました。承認画面で、店長に直してもらいます。")
             return {"result": state['result']}
         elif state["result"] == "retry":
             print("案が空です。作り直します。")
@@ -207,26 +197,16 @@ def validate(state: State):
             return {"result": state['result']}
 
 
-# 2-7) manual_draft -- 管理者の手動編成
-#   いまは何もしない(未解決の問題を5件まで表示するだけ)。店長が承認画面で案を直す
-def manual_draft(state):
-    print("手動編成中...")
-    # 手動編成のロジックを実装する
-    for problem in state.get("problems", [])[:5]:
-        print("未解決: ", problem)
-    return {}
-
-
 # 2-8) contact -- 人手が足りない日に、1人ずつ「出られますか?」と聞く (基準文書§20)
 #   止まる所(interrupt)。LINE送信は未実装で、いまは返事(可能/断り/不確か)を受け取る所だけ
 # 1人ずつ聞く。返事は3つ: 可能 / 断り / 不確か
 #   可能   -> その人の希望と案に足して、validate へ戻る
-#   断り   -> 次の人へ (上限3人。尽きたら管理者の手動編成へ)
+#   断り   -> 次の人へ (上限3人。尽きたら承認画面へ)
 #   不確か -> 今回は「断り」と同じ扱い。先回りの連絡(prefetch)は未実装
 CONTACT_ANSWERS = ("可能", "断り", "不確か")   # 連絡の返事の3種類(ここだけで定義する)
 
 
-def contact(state) -> Command[Literal["validate", "contact", "manual_draft"]]:
+def contact(state) -> Command[Literal["validate", "contact", "approve"]]:
     queue = state["contact_queue"]
     target = queue[0]                                        # いま聞く人 
     staff_id = target["staff_id"]
@@ -270,8 +250,8 @@ def contact(state) -> Command[Literal["validate", "contact", "manual_draft"]]:
 
     if remaining_queue and asked_count < state.get("contact_limit", 3):
         return Command(goto="contact", update=update)        # 次の人へ 
-    print("連絡できる人がいなくなりました。管理者の手動編成に進みます。")
-    return Command(goto="manual_draft", update=update)
+    print("連絡できる人がいなくなりました。承認画面に進みます。")
+    return Command(goto="approve", update=update)
 
 
 # 2-9) approve -- 管理者の承認待ち。店長の画面に案を出して止まる(interrupt)
@@ -308,10 +288,15 @@ def finalize(state):
 
 
 # 2-12) send_final_shift -- 最終結果を各従業員に通知
-#   (仮実装) いまはメッセージを返すだけ。LINE通知は B9 で作る
+#   確定した案で、勤務のある人全員に、1人1通ずつ送る(送る部品は node/line.py。いまはスタブ=本物は送らない)
+#   ⚠ 再開すると、この関数は最初から走り直す。「送り済み」の印は、まだ無い(B9 の宿題。README §10)
 def send_final_shift(state):
-    print("最終シフトを送信しました。")
-    return {"final_message": "〇月の最終シフトを送信しました。"}
+    draft = state["draft_store_shift"]
+    staff_ids = sorted({work["staff_id"] for work in draft})
+    for staff_id in staff_ids:
+        send_line(staff_id, make_final_text([work for work in draft if work["staff_id"] == staff_id]))
+    print(f"最終シフトを{len(staff_ids)}人に送信しました。")
+    return {"final_message": f"最終シフトを{len(staff_ids)}人に送信しました。"}
 
 
 
@@ -320,14 +305,12 @@ def send_final_shift(state):
 
 
 # ===============================================================================
-# 4) グラフの設計: ノード(処理)を登録する。route_3 だけはノードとして登録する(Command で行き先を返すため)。route_1・route_2 は下の5)で分かれ道として登録する
+# 4) グラフの設計: ノード(処理)を登録する。route_3 だけはノードとして登録する(Command で行き先を返すため)。route_2 は下の5)で分かれ道として登録する
 # ===============================================================================
 builder = StateGraph(State)
 builder.add_node("collect", collect)
-builder.add_node("skill_check", skill_check)
 builder.add_node("auto_draft", auto_draft)
 builder.add_node("validate", validate)
-builder.add_node("manual_draft", manual_draft)
 builder.add_node("contact", contact)
 builder.add_node("approve", approve)
 builder.add_node("route_3", route_3)
@@ -339,14 +322,12 @@ builder.add_node("send_final_shift", send_final_shift)
 
 
 # ===============================================================================
-# 5) グラフ連結: 矢印をつなぐ。分かれ道の route_1 / route_2 は routes.py (route_3 は Command で行き先を返す)
+# 5) グラフ連結: 矢印をつなぐ。分かれ道の route_2 は routes.py (route_3 は Command で行き先を返す)
 # ===============================================================================
 builder.add_edge(START, "collect")
-builder.add_conditional_edges("collect", route_1, {"skill_check": "skill_check", "auto_draft": "auto_draft"})
-builder.add_edge("skill_check", "auto_draft")
+builder.add_edge("collect", "auto_draft")
 builder.add_edge("auto_draft", "validate")
-builder.add_conditional_edges("validate", route_2, {"approve": "approve", "contact": "contact", "auto_draft": "auto_draft", "manual_draft": "manual_draft"})
-builder.add_edge("manual_draft", "approve")
+builder.add_conditional_edges("validate", route_2, {"approve": "approve", "contact": "contact", "auto_draft": "auto_draft"})
 builder.add_edge("approve", "route_3")
 builder.add_edge("finalize", "send_final_shift")
 builder.add_edge("send_final_shift", END)

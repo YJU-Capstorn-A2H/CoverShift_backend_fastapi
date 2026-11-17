@@ -7,18 +7,16 @@
 #   0)  初期設定                                            -> settings.py   (定数・STORE_SETTINGS・スタッフデータ)
 #   1)  State の箱                                          -> state.py
 #   2)  ノード(処理の流れの順)                               -> graph.py / routes.py
-#       2-1)  【コード】希望・スキル・指示を読む               -> graph.py: collect
-#       2-2)  【分岐】スキルチェックが必要か                  -> routes.py: route_1
-#       2-3)  【コード】未確認を店長に知らせる(止まらない)      -> graph.py: skill_check
+#       2-1)  【コード】希望・指示を読む               -> graph.py: collect
 #       2-4)  【LLM】AIが編成案を作る                        -> graph.py: auto_draft
 #       2-5)  【コード】各ルールの検査                        -> graph.py: validate
 #       2-6)  【分岐】検査の結果で、次の行き先を決める         -> routes.py: route_2
-#       2-7)  【コード】管理者の手動編成                      -> graph.py: manual_draft
 #       2-8)  【待機】人手が足りない日の連絡(LINE送信は未実装) -> graph.py: contact
 #       2-9)  【待機】管理者の承認                           -> graph.py: approve
 #       2-10) 【分岐】店長の決定で、次の行き先を決める         -> routes.py: route_3
 #       2-11) 【コード】確定を保存(仮実装)                    -> graph.py: finalize
-#       2-12) 【コード】各従業員に通知(仮実装)                -> graph.py: send_final_shift
+#       2-12) 【コード】各従業員に LINE で通知(スタブ)         -> graph.py: send_final_shift
+#       (2-2・2-3・2-7 は B7 で削除した。番号は、あとでまとめて振り直す)
 #   3)  ノードが使う道具
 #       3-1)  検査と計算                                    -> node/checks.py
 #       3-2)  LLM の用意・JSON の取り出し                    -> node/llm.py

@@ -17,14 +17,19 @@ LangGraph로 만든 월간 시프트 편성 그래프이다.
 | ----------------- | --------------------------------------------------------------------------------------- |
 | `shift_graph.py`  | **실행 입구만** 담당. `builder`를 외부에 노출한다. `python shift_graph.py start`로 실행 |
 | `graph.py`        | **처리의 본체**. 노드(collect~send_final_shift)와 연결(`builder`)                       |
-| `routes.py`       | 분기 `route_1`~`route_3` (다음에 어디로 갈지만 결정)                                    |
+| `routes.py`       | 분기 `route_2`・`route_3` (다음에 어디로 갈지만 결정)                                   |
 | `state.py`        | `State` (그래프 전체가 공유하는 상자)                                                   |
-| `settings.py`     | 상수・점포별 설정・스태프 데이터. **B1/D5에서 DB・MCP 읽기로 교체할 곳**                |
+| `settings.py`     | 상수・점포별 설정(`STORE_SETTINGS`)・스태프 데이터(`staff_data.json`. 없어도 됨)・`get_store` |
+| `node/convert.py` | DB에서 읽은 행을 그래프용 데이터로 변환한다(**DB에는 연결하지 않음**. 변환만) |
+| `node/db.py`      | DB에서 한 달 분 데이터를 읽는다(**읽기만 하고 쓰지 않음**). `period_id`가 있으면 `collect`가 사용 |
+| `node/line.py`    | LINE으로 보내는 부품(스텁. **실제로는 보내지 않음**. 보낸 내용을 기록만 함). `send_final_shift`가 사용 |
 | `node/checks.py`  | 규칙 검사와 계산. **LLM을 쓰지 않는, 코드만의 검사**                                    |
 | `node/llm.py`     | LLM 준비와 답변에서 JSON 추출                                                           |
 | `node/prompts.py` | LLM에 넘기는 문장(`rules`와 `make_*_text`)                                              |
 
 import 방향(순환하지 않도록 한 방향): `settings` ← `state` / `node.checks` ← `routes` ← `graph` ← `shift_graph`
+DB 관련 방향: `node.convert` ← `node.db` ← `graph`
+LINE 관련 방향: `node.line` ← `graph`
 
 ## 2. 처리 번호와 파일・함수 대응
 
@@ -34,44 +39,42 @@ import 방향(순환하지 않도록 한 방향): `settings` ← `state` / `node
 | ---- | ----------------------------------------- | --------- | ------------------ | --------------------------------------------- | -------------- |
 | 0    | 초기 설정                                 | -         | `settings.py`      | 상수, `STORE_SETTINGS`, 스태프 데이터         | 0              |
 | 1    | State 상자                                | -         | `state.py`         | `State`                                       | 1              |
-| 2-1  | 희망・스킬・지시 읽기                     | 코드      | `graph.py`         | `collect`                                     | 2-1            |
-| 2-2  | 스킬 체크 필요 여부                       | **분기①** | `routes.py`        | `route_1`                                     | 2-2            |
-| 2-3  | 미확인 항목을 점장에게 알림(멈추지 않음)  | 코드      | `graph.py`         | `skill_check`                                 | 2-3            |
+| 2-1  | 희망・지시 읽기                     | 코드      | `graph.py`         | `collect`                                     | 2-1            |
 | 2-4  | AI가 편성안 작성                          | LLM       | `graph.py`         | `auto_draft`                                  | 2-5            |
 | 2-5  | 각 규칙 검사                              | 코드      | `graph.py`         | `validate`                                    | 2-6            |
 | 2-6  | 검사 결과에 따라 다음 경로 결정           | **분기②** | `routes.py`        | `route_2`                                     | 2-6c           |
-| 2-7  | 관리자 수동 편성                          | 코드      | `graph.py`         | `manual_draft`                                | 2-7            |
 | 2-8  | 인원이 부족한 날 연락(LINE 전송은 미구현) | 대기      | `graph.py`         | `contact`                                     | 2-8            |
 | 2-9  | 관리자 승인                               | 대기      | `graph.py`         | `approve`                                     | 2-9            |
 | 2-10 | 점장의 결정에 따라 다음 경로 결정         | **분기③** | `routes.py`        | `route_3`                                     | 2-10           |
 | 2-11 | 확정 저장(임시 구현)                      | 코드      | `graph.py`         | `finalize`                                    | 2-11           |
-| 2-12 | 각 직원에게 통지(임시 구현)               | 코드      | `graph.py`         | `send_final_shift`                            | 2-13           |
+| 2-12 | 각 직원에게 LINE으로 통지(보내는 부품은 스텁) | 코드 | `graph.py`         | `send_final_shift`                            | 2-13           |
 | 3-1  | 검사와 계산 도구                          | 코드      | `node/checks.py`   | `check_*`, `to_min`, `build_contact_queue` 등 | 2-4, 2-6, 2-6b |
 | 3-2  | LLM 준비・JSON 추출                       | 코드      | `node/llm.py`      | `get_llm`, `extract_json`                     | 2-4            |
 | 3-3  | LLM에 넘기는 문장                         | 코드      | `node/prompts.py`  | `rules`, `make_*_text`                        | 2-5, 2-6a      |
+| 3-4  | DB 행을 그래프용 데이터로 변환            | 코드      | `node/convert.py`  | `make_staff_list`, `make_store_settings` 등   | -              |
+| 3-5  | DB에서 한 달 분을 읽음(읽기만)            | 코드      | `node/db.py`       | `load_period_data`                            | -              |
+| 3-6  | LINE으로 1명에게 보냄(스텁)               | 코드      | `node/line.py`     | `send_line`                                   | -              |
+| 3-7  | 확정 시프트 안내 본문을 만듦              | 코드      | `node/line.py`     | `make_final_text`                             | -              |
 | 4    | 노드 등록                                 | -         | `graph.py`(아래쪽) | `builder.add_node`                            | 3              |
 | 5    | 노드 연결                                 | -         | `graph.py`(아래쪽) | `builder.add_edge` 등                         | 4              |
 | 6    | 실행                                      | -         | `shift_graph.py`   | `if __name__ == "__main__":`                  | 5              |
 
-※ 구 번호는 이전 버전의 주석이나 `データフロー.md` 같은 예전 자료와 대조하기 위한 열이다. 예전의 「회사 규정으로 변환」(구 2-12)은 삭제했기 때문에 번호가 없다.
+※ 구 번호는 이전 버전의 주석이나 `データフロー.md` 같은 예전 자료와 대조하기 위한 열이다. 예전의 「회사 규정으로 변환」(구 2-12)은 삭제했기 때문에 번호가 없다. 2-2(스킬 체크 분기)・2-3(스킬 체크)・2-7(수동 편성)도 B7에서 삭제했기 때문에 번호가 없다(나중에 다시 매길 예정).
 
 ## 3. 흐름
 
 ```mermaid
 flowchart TD
     S([START]) --> collect
-    collect -->|route_1: 스킬과 관리자 평가가 다른 사람이 있음| skill_check
-    collect -->|route_1: 전원 일치| auto_draft
-    skill_check --> auto_draft
+    collect --> auto_draft
     auto_draft[auto_draft<br/>LLM이 안 작성] --> validate[validate<br/>코드가 검사]
     validate -->|route_2: valid| approve
     validate -->|no_staff 인원 부족한 날| contact
     validate -->|retry 재작성| auto_draft
-    validate -->|limit_reached / 그 외| manual_draft
+    validate -->|limit_reached / 그 외| approve
     contact -->|可能| validate
     contact -->|断り・不確か 다음 사람| contact
-    contact -->|소진 / 상한 3명| manual_draft
-    manual_draft --> approve
+    contact -->|소진 / 상한 3명| approve
     approve[approve<br/>점장 승인 대기] --> route_3
     route_3 -->|approved 이고 문제 없음| finalize
     route_3 -->|approved 이지만 자격자 없음/중복 있음| approve
@@ -80,12 +83,11 @@ flowchart TD
     finalize --> send_final_shift --> E([END])
 ```
 
-## 4. 분기는 3개
+## 4. 분기는 2개
 
 | 분기               | 어디의 다음 | 보는 값                      | 행선지                                                                                                          |
 | ------------------ | ----------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| **route_1** (2-2)  | `collect`   | `staff_skill`과 `admin_rate` | 한 명이라도 다름 → `skill_check` / 전원 일치 → `auto_draft`                                                     |
-| **route_2** (2-6)  | `validate`  | `result`                     | `valid` → `approve` / `no_staff` → `contact` / `retry` → `auto_draft` / `limit_reached`・그 외 → `manual_draft` |
+| **route_2** (2-6)  | `validate`  | `result`                     | `valid` → `approve` / `no_staff` → `contact` / `retry` → `auto_draft` / `limit_reached`・그 외 → `approve` |
 | **route_3** (2-10) | `approve`   | `decision`                   | 아래 표                                                                                                         |
 
 **route_3의 행선지**(점장의 결정별):
@@ -101,15 +103,15 @@ flowchart TD
 
 ## 5. validate의 판정(result가 정해지는 방식)
 
-`validate`는 위에서부터 차례로 확인하고, 가장 먼저 해당하는 항목으로 `result`가 정해진다.
+`validate`는 위에서부터 차례로 확인하고, 가장 먼저 해당하는 항목으로 `result`가 정해진다. 문제가 고쳐지지 않으면 문제 목록과 함께 곧바로 점장의 승인 화면으로 간다(B7에서 수동 편성 노드 `manual_draft`를 없앴다).
 
 | 순  | 조건                                                                                   | result          | 다음(route_2)                                                    |
 | --- | -------------------------------------------------------------------------------------- | --------------- | ---------------------------------------------------------------- |
-| ⓪   | 검사 횟수가 상한(`upper_limit`)을 넘음                                                 | `limit_reached` | `manual_draft`                                                   |
+| ⓪   | 검사 횟수가 상한(`upper_limit`)을 넘음                                                 | `limit_reached` | `approve`                                                   |
 | ①   | 안이 비어 있음                                                                         | `retry`         | `auto_draft`                                                     |
-| ②   | 문제가 있고, 점장이 고친 안(`edit_saved`)임                                            | `limit_reached` | `manual_draft`(LLM을 호출하지 않음. 점장의 편집이 사라지기 때문) |
-| ③   | 문제가 있고, 이전과 같은 문제임(인원 숫자만 다른 경우도 같은 것으로 취급)              | `limit_reached` | `manual_draft`(더 이상 고칠 수 없음)                             |
-| ④   | 문제가 있고, 재작성 상한(`UPPER_LIMIT` = 3)에 도달함                                   | `limit_reached` | `manual_draft`                                                   |
+| ②   | 문제가 있고, 점장이 고친 안(`edit_saved`)임                                            | `limit_reached` | `approve`(LLM을 호출하지 않음. 점장의 편집이 사라지기 때문) |
+| ③   | 문제가 있고, 이전과 같은 문제임(인원 숫자만 다른 경우도 같은 것으로 취급)              | `limit_reached` | `approve`(더 이상 고칠 수 없음)                             |
+| ④   | 문제가 있고, 재작성 상한(`UPPER_LIMIT` = 3)에 도달함                                   | `limit_reached` | `approve`                                                   |
 | ⑤   | 문제가 있음                                                                            | `retry`         | `auto_draft`(문제 목록을 다음 LLM에 전달)                        |
 | ⑥   | 문제 없음                                                                              | `valid`         | `approve`                                                        |
 | ⑥′  | 문제는 없으나, 인원이 부족한 날이 남아 있고 연락할 수 있는 사람이 있음(연락은 3명까지) | `no_staff`      | `contact`                                                        |
@@ -160,7 +162,7 @@ Command(resume={"decision": "edit_saved", "assignments": [ {...}, ... ]})   # �
   | 답변 | 동작 |
   |---|---|
   | `可能`(가능) | 그 사람의 희망과 안에 해당 날짜의 근무를 추가 → `validate`로 복귀 |
-  | `断り`(거절) / `不確か`(불확실) | 다음 사람에게(`不確か`는 이번에는 `断り`와 같게 취급). 상한 3명에 도달하거나 후보가 소진되면 `manual_draft` |
+  | `断り`(거절) / `不確か`(불확실) | 다음 사람에게(`不確か`는 이번에는 `断り`와 같게 취급). 상한 3명에 도달하거나 후보가 소진되면 `approve` |
 
 ## 7. 숫자 규칙(상한)
 
@@ -178,7 +180,9 @@ Command(resume={"decision": "edit_saved", "assignments": [ {...}, ... ]})   # �
 | 키                                                                  | 의미                                                                |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | `store_id`                                                          | 점포 ID                                                             |
-| `period` | 대상 월 `{"start": "2026-11-01", "days": 30}`. 없으면 `settings.PERIOD`(B1에서 DB의 `shift_periods`로부터 넣음) |
+| `period`                                                            | 대상 월 `{"start": "2026-11-01", "days": 30}`. `period_id`가 있으면 `collect`가 DB에서 넣음. 없으면 `settings.PERIOD` |
+| `period_id`                                                         | DB `shift_periods`의 ID. 있으면 `collect`가 DB에서 읽음             |
+| `store_settings`                                                    | DB에서 읽은 점포 설정. 있으면 `STORE_SETTINGS[store_id]`보다 우선   |
 | `llm_all_staff`                                                     | 전원의 데이터(이름은 삭제되어 있음)                                 |
 | `draft_store_shift`                                                 | 점포 전체의 월간 시프트 안                                          |
 | `result`                                                            | `validate`의 결과(`valid` / `retry` / `no_staff` / `limit_reached`) |
@@ -196,25 +200,38 @@ Command(resume={"decision": "edit_saved", "assignments": [ {...}, ... ]})   # �
 # 실제에 가까운 실행 (PostgreSQL이 localhost:5433에서 실행 중이고, .env에 DATABASE_URL과 유효한 ANTHROPIC_API_KEY가 필요)
 cd app\graph
 python shift_graph.py start                 # 처음부터. 승인 대기에서 멈춤
+python shift_graph.py start_db period-1 1  # DB에서 읽어서 처음부터(세 번째가 period_id)
 python shift_graph.py approve               # 승인으로 재개
 python shift_graph.py contact 可能          # 연락 답변으로 재개
 python shift_graph.py redraft               # 재작성 요청으로 재개
 
 # 테스트 (가짜 LLM을 쓰므로 DB도 API 키도 필요 없음)
 cd test\graph
-python test_step1.py                        # 검사・승인・재작성   T1~T7
+python test_step1.py                        # 검사・승인・재작성   T1~T7・S1~S2・N1~N6
 python test_contact.py                      # 연락 흐름           A~E
-# 둘 다 마지막에 ALL PASS가 나오면 정상
+python test_convert.py                      # DB 행 변환          (DB 불필요)
+python test_period.py                       # 월 일수・요일 규칙  (DB 불필요)
+
+# DB를 쓰는 테스트(전용 schema를 만들고, 끝나면 지움. 기존 테이블은 읽지도 쓰지도 않음)
+$env:TEST_DATABASE_URL = "postgresql://covershift:비밀번호@localhost:5433/covershift"
+python test_db.py                           # DB에서 읽어 승인까지  D1~D8(환경 변수가 없으면 SKIP)
+python check_real_db.py                     # 실제 DB를 읽기만(건수만 표시. 이름은 출력하지 않음)
+# test_*.py는 마지막에 ALL PASS가 나오면 정상
 ```
 
-테스트는 `node.llm.LLM`에 가짜 LLM을 넣어 실행한다. **실제 LLM은 1회에 약 6~10분이 걸린다.**
+테스트는 `node.llm.LLM`에 가짜 LLM을 넣어 실행한다. **실제 LLM은 1회에 몇 분이 걸린다**(11/17 실측: 17명・30일 기준 1회째 186초・2회째 71초).
 
 ## 10. 현재 미완성인 부분(솔직하게)
 
-- `collect`는 DB가 아니라 `settings.py`가 읽은 `staff_data.json`을 넘긴다(B1에서 DB 읽기로 교체). MCP 호출은 주석 처리 상태(D5).
-- 점포는 `STORE_SETTINGS`의 101번, 기간은 `PERIOD`(2026-11, 30일)로 고정(테스트용 데이터). 검사・프롬프트는 월의 일수(28~31일)와 요일별 규칙(규칙의 `weekdays`: 1=월~7=일. 없으면 매일)에 대응 완료. `State`의 `period`를 넘기면 그 달 기준으로 동작한다(B1에서 DB로부터 넣음).
-- `settings.py`는 `staff_data.json`을 **현재 폴더에서** 찾는다. `app\graph` 안에서 실행하지 않으면 `FileNotFoundError`가 발생한다(B1에서 해소 예정).
-- `finalize`(확정 저장)와 `send_final_shift`(LINE 통지)는 메시지만 돌려주는 임시 구현이다(B8/B9).
-- `contact`는 LINE 전송이 없고, 답변을 받는 부분만 있다.
-- `route_1` / `skill_check`는 `staff_skill`과 `admin_rate` 두 열이 있다는 전제이다. DB에 이 열이 있는지는 미확인.
+- `collect`는 State에 `period_id`가 있으면 DB에서 읽는다(`node/db.py`). 없으면 지금까지처럼 `staff_data.json`. MCP 호출은 주석 처리 상태(D5).
+- `period_id`를 넘기면 DB의 점포・월・시간대 규칙・공휴일 수로 동작한다. 넘기지 않으면 `STORE_SETTINGS`의 101번・`PERIOD`(2026-11, 30일)의 테스트용 데이터로 동작한다. 검사・프롬프트는 월의 일수(28~31일)와 요일별 규칙(`weekdays`: 1=월~7=일. 없으면 매일)에 대응 완료.
+- **그래프는 직원 이름을 읽지 않는다**(기준 문서 11/07). `employees.name`은 SELECT하지 않으며, State에도 LLM에도 들어가지 않는다. 화면에 나오는 이름은 `ID{번호}`. 이름으로 바꾸는 것은 화면・API 쪽 역할(아직 미구현).
+- `finalize`(확정 저장)는 메시지만 돌려주는 임시 구현이다(B8은 리더의 답을 기다리며 보류).
+- `send_final_shift`는 확정된 안을 기준으로, 근무가 있는 사람 전원에게 1명당 1통씩 `node/line.py`의 `send_line`으로 보낸다(B9). 다만 `send_line`은 스텁이라 실제로는 보내지 않는다. 실제로 바꿀 때는 `send_line`의 내용만 교체한다.
+- `contact`는 LINE 전송이 없고, 답변을 받는 부분만 있다(B10에서 같은 `node/line.py` 부품을 쓸 예정).
+- `send_final_shift`에는 "전송 완료" 표시가 아직 없다. 재개하면 처음부터 다시 실행되므로, 도중에 끊기면 같은 사람에게 2번 보낼 우려가 있다(B9의 숙제. DB에 표시 열을 만들지는 허가가 필요).
+- LINE ID(`employees.line_user_id`)는 State에 넣지 않는다. 실제 `send_line`이 `staff_id`로 DB에서 찾는다. LINE 미연동인 사람(NULL)을 어떻게 할지는 아직 정하지 않았다.
+- DB(v18)에는 `staff_skill`과 `admin_rate` 열이 없다(DB에서 읽으면 둘 다 `None`). 스킬 체크(`skill_check`・`route_1`)와 수동 편성(`manual_draft`)은 B7에서 삭제했다. 데이터의 `None` 칸은 아직 남아 있다.
+- 관리자 지시(`manager_actions.rules`)는 아직 `extra_rules`로 읽어 들이지 않는다(B6).
+- 시간대 규칙의 `weekly_days` / `fixed_weekdays`는 아직 사용하지 않는다.
 - 연락 후보의 순서는 「최근 근무 일수가 적은 사람이 먼저」뿐이다(스킬 일치는 미구현).

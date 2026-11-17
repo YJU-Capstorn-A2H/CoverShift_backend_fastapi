@@ -1,4 +1,4 @@
-# test_step1.py -- B3(重複配置の検査) と B5(承認ブロック・店長のやり直し回数)のテスト
+# test_step1.py -- B3(重複配置の検査)・B5(承認ブロック・店長のやり直し回数)・B7(整理)・B9(確定後のLINE通知)のテスト
 # ニセのLLM + メモリ保存。DB・API・お金は使わない
 # 実行: test\graph フォルダで  python test_step1.py
 # 실행: test\graph 폴더에서  python test_step1.py
@@ -118,7 +118,7 @@ path, views, state, llm = run([overlap_draft()], [
     {"decision": "edit_saved", "assignments": clean_draft()},
     "approved"])
 print(path)
-check("T3: 重なりが直らず manual_draft に行く", "manual_draft" in path)
+check("T3: 重なりが直らず、承認画面に問題つきで止まる(manual_draft は通らない)", "manual_draft" not in path and views[0]["problems"] != [])
 check("T3: 1回目の承認はブロックされ、承認待ちに戻る", path.count("止まる:approved") >= 3)
 blocked = [view for view in views if view["blocked_reasons"]]
 check("T3: ブロックの理由に「重なっています」が出る", len(blocked) == 1 and "重なっています" in blocked[0]["blocked_reasons"][0])
@@ -157,9 +157,32 @@ path, views, state, llm = run([clean_draft()], [
     "approved"])
 print(path)
 check("T7: 編集して保存しても、LLMは呼ばれない(1回のまま)", llm.call_count == 1)
-check("T7: 問題が残る編集は、manual_draft を通って承認画面に戻る", "manual_draft" in path)
+check("T7: 問題が残る編集は、そのまま承認画面に戻る(manual_draft は通らない)", "manual_draft" not in path and path.count("止まる:approved") >= 3)
 check("T7: 承認画面に、残った問題(資格者)が出る", any("資格者" in problem for problem in views[1]["problems"]))
 check("T7: 直して保存→承認で確定し、案は店長が保存したものになる",
       path[-1] == "send_final_shift" and state.values["draft_store_shift"] == clean_draft())
+
+# --- N) B9: 確定したら、勤務のある人に1通ずつ LINE(スタブ)が送られる ---------------------------
+import node.line
+node.line.SENT.clear()
+path, views, state, llm = run([clean_draft()], ["approved"])
+sent = {item["staff_id"]: item["text"] for item in node.line.SENT}
+check("N1: 確定すると、勤務のある2人に、1通ずつ送られる", len(node.line.SENT) == 2 and sorted(sent) == [1, 2])
+check("N2: 本文は、その人の勤務だけ(社員Aは 8:00〜22:30 の30日分、パートBは 9:00〜13:00 の30日分)",
+      sent[1].count("08:00〜22:30") == 30 and "09:00〜13:00" not in sent[1]
+      and sent[2].count("09:00〜13:00") == 30 and "08:00〜22:30" not in sent[2])
+check("N3: 本文に、名前が入らない", all("社員A" not in text and "パートB" not in text for text in sent.values()))
+check("N4: 最後まで進み、結果のメッセージに人数が出る", path[-1] == "send_final_shift" and "2人" in state.values["final_message"])
+node.line.SENT.clear()
+path, views, state, llm = run([overlap_draft()], ["approved"])
+check("N5: 承認がブロックされて止まっている間は、1通も送られない", path[-1] == "止まる:approved" and node.line.SENT == [])
+text = node.line.make_final_text([{"staff_id": 1, "date": "2026-11-03", "start": "09:00", "end": "13:00"},
+                                  {"staff_id": 1, "date": "2026-11-01", "start": "08:00", "end": "12:00"}])
+check("N6: 本文は日付の順で、曜日がつく", text.splitlines()[1] == "11/1(日) 08:00〜12:00" and text.splitlines()[2] == "11/3(火) 09:00〜13:00")
+
+# --- S) B7: 抜いたものが、グラフに無い ---------------------------------------------------------
+import routes
+check("S1: skill_check / manual_draft は、グラフのノードに無い", not ({"skill_check", "manual_draft"} & set(shift_graph.builder.nodes)))
+check("S2: route_1 は、routes.py に無い", not hasattr(routes, "route_1"))
 
 print("ALL PASS")
