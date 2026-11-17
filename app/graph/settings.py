@@ -23,7 +23,7 @@ PERIOD = {"start": "2026-11-01", "days": 30}                  # 対象期間の�
 UPPER_LIMIT = 3                                               # 作り直しの上限(LLM は1回で約6〜10分)
 MANAGER_REQUEST_LIMIT = 2                                     # 店長が「やり直し」を頼める回数
 MODEL_NAME = "claude-sonnet-5-5"                              # LLMのモデル名
-LLM = None                                                    # テストのときは、ここにニセの LLM を入れる
+
 
 
 STORE_SETTINGS = {

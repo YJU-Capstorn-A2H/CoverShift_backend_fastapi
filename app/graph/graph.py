@@ -6,10 +6,12 @@ from langgraph.types import Command, interrupt
 from settings import STORE_SETTINGS, MANAGER_REQUEST_LIMIT, llm_all_staff, id_to_name
 from state import State
 from routes import route_1, route_2, route_3
-from node.checks import (check_coverage, check_qualification, check_requents, check_closing, check_double_booking,
-                         check_shain_days, check_headcount, problem_key, make_short_report, impossible_cases, build_contact_queue)
+from node.checks import (check_coverage, check_qualification, check_requests, check_closing, check_double_booking,
+                         check_shain_days, check_headcount, problem_key, make_shortage_report, impossible_cases, 
+                         build_contact_queue)
 from node.llm import get_llm, extract_json
-from node.prompts import (rules, make_qualification_text, make_days_text, make_instruction_text, make_prev_draft_text)
+from node.prompts import (rules, make_qualification_text, make_days_text,
+                          make_headcount_text, make_problem_text, make_instruction_text, make_prev_draft_text)
 
 # mcp用 import / mcp용 import
 # import asyncio
@@ -21,7 +23,7 @@ from node.prompts import (rules, make_qualification_text, make_days_text, make_i
 
 # ===============================================================================
 # 2) グラフ作成
-# ==============================================================================
+# ===============================================================================
 # 2-1)【コード】希望・スキル・指示を読む
 def collect(state):
     print("希望シフトを収集中...")
