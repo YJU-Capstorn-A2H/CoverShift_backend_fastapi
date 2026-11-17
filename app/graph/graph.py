@@ -1,4 +1,7 @@
-# builder とつなぎ。ここから graph を出す
+# graph.py -- ノード(1つ1つの処理)と、それをつなぐ builder
+#   ・ここに処理の「中身」がある。shift_graph.py は、これを動かす入口だけ
+#   ・分岐は routes.py / 検査と計算は node/checks.py / LLM は node/llm.py / プロンプトは node/prompts.py
+#   ・止まる所(interrupt)は contact と approve の2つだけ(渡す値・返す値は README.md)
 import copy, json, time
 from typing import Literal
 from langgraph.graph import StateGraph, START, END
@@ -7,24 +10,21 @@ from settings import STORE_SETTINGS, MANAGER_REQUEST_LIMIT, llm_all_staff, id_to
 from state import State
 from routes import route_1, route_2, route_3
 from node.checks import (check_coverage, check_qualification, check_requests, check_closing, check_double_booking,
-                         check_shain_days, check_headcount, problem_key, make_shortage_report, impossible_cases, 
-                         build_contact_queue)
+                         check_shain_days, check_headcount, problem_key, make_shortage_report, impossible_cases, build_contact_queue)
 from node.llm import get_llm, extract_json
 from node.prompts import (rules, make_qualification_text, make_days_text,
                           make_headcount_text, make_problem_text, make_instruction_text, make_prev_draft_text)
-
-# mcp用 import / mcp용 import
-# import asyncio
+# import asyncio                          # MCP を使うときに戻す
 # from mcp_call import call_mcp_tool
-
-
-
 
 
 # ===============================================================================
 # 2) グラフ作成
-# ===============================================================================
-# 2-1)【コード】希望・スキル・指示を読む
+# ==============================================================================
+
+# 2-1) collect -- 最初に1回だけ。スタッフの希望・スキルを読んで、State を初期化する
+#   出力: llm_all_staff(全員のデータ)と、各カウンターの初期値
+#   いまは settings.py のデータをそのまま渡す(B1 で DB から、D5 で MCP から読む形に置き換える)
 def collect(state):
     print("希望シフトを収集中...")
     # data = asyncio.run(call_mcp_tool(SERVER, "get_staff_availability"))                                 # MCPサーバーからデータを取得する
@@ -36,18 +36,21 @@ def collect(state):
             "contact_queue": [], "contact_asked": 0, "contact_limit": 3, "contact_log": [], "blocked_reasons": []}
 
 
-
-# 2-3) 【コード】未確認を「要指導」とみなして、店長に知らせる(止まらない)
+# 2-3) skill_check -- 未確認を「要指導」とみなして、店長に知らせる(止まらない)
+#   スキルと管理者評価が違う人を表示するだけ。そのまま auto_draft へ進む
 def skill_check(state):
     print("スキルチェック中...")
+
     for staff in state["llm_all_staff"]:                 
         if staff["staff_skill"] != staff["admin_rate"]:  
             print(f"{id_to_name[staff['staff_id']]}のスキルが違います。店長に知らせます。") 
+
     return {}
 
 
-
-# 2-5) 【LLM】AIが編成案を作る
+# 2-4) auto_draft -- LLM が、月間の編成案を作る(1回で約6〜10分)
+#   入力: llm_all_staff / problems(前回の問題) / instruction(店長の指示) / draft_store_shift(前回の案)
+#   出力: draft_store_shift(新しい案) / return_count(呼んだ回数)
 def auto_draft(state: State):
     """
     希望のシフト・スキル・管理者評価をもとに、LLMが自動で編成案を作る。
@@ -63,13 +66,15 @@ def auto_draft(state: State):
     prompt = rules + make_qualification_text(store["qualification_rules"]) + make_days_text(store["shain_off_days"]) + make_headcount_text(store["min_headcount"]) + make_problem_text(state.get("problems", [])) + "\n【スタッフのデータ(JSON)】\n" + json.dumps(state["llm_all_staff"], ensure_ascii=False) + make_instruction_text(state.get("instruction", "")) + make_prev_draft_text(state.get("draft_store_shift", []))
     llm = get_llm()
     llm_start_time = time.time()
-    res = llm.invoke(prompt)
+    res = llm.invoke(prompt)                               # ← ここで時間がかかる
     print(f"LLM呼び出し: {time.time() - llm_start_time:.0f}秒")
     print(res.usage_metadata)
     print(res.response_metadata.get("stop_reason"))
+
     if res.response_metadata.get("stop_reason") == "max_tokens":
         raise RuntimeError("出力の上限に達しました。max_tokens を上げてください")
     text = ""
+    
     if isinstance(res.content, str):
         text = res.content
     else:
@@ -79,24 +84,31 @@ def auto_draft(state: State):
             elif isinstance(block, dict) and block.get("type") == "text":
                 text += block["text"]
 
-    with open("llm_raw_output.txt", "w", encoding="utf-8") as output_file:
+    with open("llm_raw_output.txt", "w", encoding="utf-8") as output_file:   # 返事の全文を保存(デバッグ用)
         output_file.write(text)
 
         print("返事の先頭:", repr(text[:100]))
     print("返事の末尾:", repr(text[-100:]))
 
-    data = extract_json(text)
+    data = extract_json(text)                              # 返事から、編成案のJSONだけを取り出す
     print(f"編成の件数: {len(data['assignments'])}")
 
-    with open("month_draft.json", "w", encoding="utf-8") as output_file:
+    with open("month_draft.json", "w", encoding="utf-8") as output_file:      # 案をJSONで保存(デバッグ用)
         json.dump(data, output_file, ensure_ascii=False)
 
     return {"draft_store_shift": data["assignments"], "return_count": state["return_count"]}
 
 
-
-# 2-6c) 【コード】編成案の検査
-def validate(state: State):   # ルールを守っているか検査する
+# 2-5) validate -- 編成案がルールを守っているか検査する(コードだけ。LLM は使わない)
+#   入力: draft_store_shift(案) / llm_all_staff(希望)
+#   出力: result = valid(OK) / retry(作り直し) / no_staff(人が足りない日あり) / limit_reached(手動へ)
+#         problems = 見つかった問題の一覧
+#   次の行き先: route_2 (2-6) が result を見て決める
+#   判定の順番: ⓪検査回数が上限超え→limit_reached ①案が空→retry ②店長が直した案に問題→limit_reached(LLMは呼ばない)
+#               ③前回と同じ問題→limit_reached ④作り直しの上限→limit_reached ⑤問題あり→retry ⑥問題なし→valid
+#               (⑥で人が足りない日が残り、連絡できる人がいれば no_staff)
+#   注意: 店長が直した案(edit_saved)は、LLM に作り直させない(店長の編集が消えるため)
+def validate(state: State):
     print("編成案を検査中...")
 
     # 【分岐】検査回数が上限に達しているかどうかを判断する
@@ -113,26 +125,26 @@ def validate(state: State):   # ルールを守っているか検査する
         staff = state["llm_all_staff"]
 
         problems = []
-        problems += check_coverage(draft, staff)
-        problems += check_qualification(draft, staff, store["qualification_rules"])
-        problems += check_requests(draft, staff)
-        problems += check_closing(draft, staff)
-        problems += check_shain_days(draft, staff, store["shain_off_days"])
-        problems += check_headcount(draft, staff, store["min_headcount"])
-        problems += check_double_booking(draft)
+        problems += check_coverage(draft, staff)                                   # どの30分にも社員がいるか
+        problems += check_qualification(draft, staff, store["qualification_rules"])    # 資格者が足りているか
+        problems += check_requests(draft, staff)                                   # パート・バイトが申請のない日に入っていないか
+        problems += check_closing(draft, staff)                                    # 22:30まで残るのは closing_ok の人だけ
+        problems += check_shain_days(draft, staff, store["shain_off_days"])            # 社員の出勤日数
+        problems += check_headcount(draft, staff, store["min_headcount"])              # 時間帯ごとの最低人数
+        problems += check_double_booking(draft)                                    # 同じ人の勤務の重なり
 
-        if state["draft_store_shift"] == []:
+        if state["draft_store_shift"] == []:                    # 案が空 -> 作り直し
             state["result"] = "retry"
-        elif problems and state.get("decision") == "edit_saved":   # 店長が直した案は、LLMに作り直させない(編集が消えるため) / 점장이 고친 안은 LLM이 다시 만들지 않게 한다
+        elif problems and state.get("decision") == "edit_saved":   # 店長が直した案は、LLMに作り直させない(編集が消えるため)
             print("店長が直した案に、まだ問題があります。店長の画面に戻します。")
             return {"result": "limit_reached", "problems": problems}
-        elif problems and {problem_key(problem) for problem in problems} == {problem_key(problem) for problem in state.get("problems", [])}:
+        elif problems and {problem_key(problem) for problem in problems} == {problem_key(problem) for problem in state.get("problems", [])}:   # 前回と同じ問題 -> もう直らない
             print("前回と同じ問題が残っています。これ以上は直りません。")
             return {"result": "limit_reached", "problems": problems}
-        elif problems and state["return_count"] >= state["upper_limit"]:
+        elif problems and state["return_count"] >= state["upper_limit"]:   # 作り直しの上限
             print("編成案の検査回数が上限に達しました。手動編成を行います。")
             return {"result": "limit_reached", "problems": problems}
-        elif problems:
+        elif problems:                                         # 問題あり -> 作り直し
             print(problems)
             state["result"] = "retry"
             return {"result": state['result'], "problems": problems}
@@ -151,13 +163,13 @@ def validate(state: State):   # ルールを守っているか検査する
             asked_count = state.get("contact_asked", 0)
             queue = state.get("contact_queue", [])
 
-            if shortage and asked_count == 0 and not queue:  # 最初の1回だけ、候補の順番を作る / 처음 한 번만 후보 순서를 만든다
+            if shortage and asked_count == 0 and not queue:  # 最初の1回だけ、候補の順番を作る
                 already_asked = {(log_item["staff_id"], log_item["date"]) for log_item in state.get("contact_log", [])}
                 queue = build_contact_queue(store["min_headcount"], state["llm_all_staff"], draft, already_asked)
 
             still_short = {(date, rule["start"]) for date, rule, max_people
                            in impossible_cases(store["min_headcount"], state["llm_all_staff"])}
-            queue = [item for item in queue if (item["date"], item["start"]) in still_short]   # もう足りた日は聞かない / 이미 충족된 날은 묻지 않는다
+            queue = [item for item in queue if (item["date"], item["start"]) in still_short]   # もう足りた日は聞かない
             
             if queue and asked_count < state.get("contact_limit", 3):
                 print("人が足りない日があるので、スタッフに連絡します。")
@@ -178,8 +190,8 @@ def validate(state: State):   # ルールを守っているか検査する
             return {"result": state['result']}
 
 
-
-# 2-7) 【コード】管理者手動編成
+# 2-7) manual_draft -- 管理者の手動編成
+#   いまは何もしない(未解決の問題を5件まで表示するだけ)。店長が承認画面で案を直す
 def manual_draft(state):
     print("手動編成中...")
     # 手動編成のロジックを実装する
@@ -188,8 +200,8 @@ def manual_draft(state):
     return {}
 
 
-
-# 2-8) 【コード】人手が足りない日のLINE連絡 (基準文書§20)
+# 2-8) contact -- 人手が足りない日に、1人ずつ「出られますか?」と聞く (基準文書§20)
+#   止まる所(interrupt)。LINE送信は未実装で、いまは返事(可能/断り/不確か)を受け取る所だけ
 # 1人ずつ聞く。返事は3つ: 可能 / 断り / 不確か
 #   可能   -> その人の希望と案に足して、validate へ戻る
 #   断り   -> 次の人へ (上限3人。尽きたら管理者の手動編成へ)
@@ -245,8 +257,8 @@ def contact(state) -> Command[Literal["validate", "contact", "manual_draft"]]:
     return Command(goto="manual_draft", update=update)
 
 
-
-# 2-9) 【待機】管理者承認
+# 2-9) approve -- 管理者の承認待ち。店長の画面に案を出して止まる(interrupt)
+#   返事: approved / redraft_requested / edit_saved(渡す値・返す値は README.md)
 def approve(state):
     print("店長の承認を待っています...")
     resp = interrupt({
@@ -259,7 +271,7 @@ def approve(state):
     if isinstance(resp, str):                                                     # 文字列だけで再開しても動くように
         resp = {"decision": resp}
 
-    update = {"decision": resp["decision"], "blocked_reasons": []}                # 理由は読んだら消す / 이유는 읽었으면 지운다
+    update = {"decision": resp["decision"], "blocked_reasons": []}                # 理由は読んだら消す
 
     if resp["decision"] == "redraft_requested":
         update["instruction"] = resp.get("instruction", "")
@@ -270,15 +282,16 @@ def approve(state):
     return update
 
 
-
-# 2-11)【コード】最新データで再チェックして、確定を保存
+# 2-11) finalize -- 最新データで再チェックして、確定を保存
+#   (仮実装) いまはメッセージを返すだけ。DBへの保存は B8 で作る
 def finalize(state):
     print("編成案を確定しました。")
     return {"final_message": "〇月の編成案を確定しました。"}
 
 
 
-# 2-13) 【コード】最終結果を各従業員に通知
+# 2-12) send_final_shift -- 最終結果を各従業員に通知
+#   (仮実装) いまはメッセージを返すだけ。LINE通知は B9 で作る
 def send_final_shift(state):
     print("最終シフトを送信しました。")
     return {"final_message": "〇月の最終シフトを送信しました。"}
@@ -286,9 +299,11 @@ def send_final_shift(state):
 
 
 
+               
+
 
 # ===============================================================================
-# 3) グラフの設計
+# 4) グラフの設計: ノード(処理)を登録する。route_3 だけはノードとして登録する(Command で行き先を返すため)。route_1・route_2 は下の5)で分かれ道として登録する
 # ===============================================================================
 builder = StateGraph(State)
 builder.add_node("collect", collect)
@@ -307,7 +322,7 @@ builder.add_node("send_final_shift", send_final_shift)
 
 
 # ===============================================================================
-# 4) グラフ連結
+# 5) グラフ連結: 矢印をつなぐ。分かれ道の route_1 / route_2 は routes.py (route_3 は Command で行き先を返す)
 # ===============================================================================
 builder.add_edge(START, "collect")
 builder.add_conditional_edges("collect", route_1, {"skill_check": "skill_check", "auto_draft": "auto_draft"})

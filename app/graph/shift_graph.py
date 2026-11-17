@@ -1,50 +1,44 @@
 # ==============================================================================
-# LangGraph/003-Handson/exercises/prototype_mcp.py　(自作LangGraph + MCP のプロトタイプ)
-# 
-# コードの内容
-# ０) 初期設定: 店舗ごとの設定データ、最初に読み込むスタッフデータ、環境変数のロード
-# １) 箱作成: Stateクラスの定義
-# ２) グラフ作成: グラフのノード(コード・分岐・LLM・待機)を定義する
-#                2-1) 【コード】希望・スキル・指示を読む
-#                2-2) 【分岐】スキルチェックが必要かどうかを判断する
-#                2-3) 【コード】未確認を「要指導」とみなして、店長に知らせる(止まらない)
-#                2-4) 【コード】LLMで使う道具
-#                2-5) 【LLM】AIが編成案を作る
-#                2-6) 【コード】各ルールの検討
-#                2-7) 【コード】管理者手動編成
-#                2-8) 【コード】人手が足りない日のLINE連絡
-#                2-9) 【待機】管理者承認
-#               2-10) 【分岐】検査結果に応じて、スタッフに連絡するか、自動編成を再度行うかを判断する
-#               2-11) 【コード】最新データで再チェックして、確定を保存
-#               2-12) 【コード】最終結果を会社の規定に変換 (現在は、まだ未実装)
-#               2-12) 【コード】最終結果を各従業員に通知
-# 3) グラフ実行: ノード定義
-# 4) グラフの連結: グラフをつなげる
-# 5) グラフの実行: グラフを実行する
-# ==============================================================================
+# shift_graph.py -- 実行の入口だけ(ノードの中身は graph.py)
+#   python shift_graph.py start / approve / contact 可能 / redraft
+#   詳しくは README.md (流れ・止まる所の値・動かし方)
 #
-# 【ファイルの分け方 / 파일 구성】
-#   settings.py        設定・定数・店舗ごとの設定・スタッフデータ / 설정・상수・점포 설정・스태프 데이터
-#   state.py           State の定義 / State 정의
-#   routes.py          分岐 route_1〜3 / 분기 route_1〜3
-#   graph.py           ノードと、つなぎ(builder) / 노드와 연결(builder)
-#   node/checks.py     ルールの検査と計算の道具 / 규칙 검사와 계산 도구
-#   node/llm.py        LLM の用意・JSON の取り出し / LLM 준비・JSON 추출
-#   node/prompts.py    プロンプトの文章 / 프롬프트 문장
-#   shift_graph.py     実行の入口(このファイル) / 실행 입구(이 파일)
+# 【処理番号と、ファイル・関数の対応】(番号は、処理の流れの順)
+#   0)  初期設定                                            -> settings.py   (定数・STORE_SETTINGS・スタッフデータ)
+#   1)  State の箱                                          -> state.py
+#   2)  ノード(処理の流れの順)                               -> graph.py / routes.py
+#       2-1)  【コード】希望・スキル・指示を読む               -> graph.py: collect
+#       2-2)  【分岐】スキルチェックが必要か                  -> routes.py: route_1
+#       2-3)  【コード】未確認を店長に知らせる(止まらない)      -> graph.py: skill_check
+#       2-4)  【LLM】AIが編成案を作る                        -> graph.py: auto_draft
+#       2-5)  【コード】各ルールの検査                        -> graph.py: validate
+#       2-6)  【分岐】検査の結果で、次の行き先を決める         -> routes.py: route_2
+#       2-7)  【コード】管理者の手動編成                      -> graph.py: manual_draft
+#       2-8)  【待機】人手が足りない日の連絡(LINE送信は未実装) -> graph.py: contact
+#       2-9)  【待機】管理者の承認                           -> graph.py: approve
+#       2-10) 【分岐】店長の決定で、次の行き先を決める         -> routes.py: route_3
+#       2-11) 【コード】確定を保存(仮実装)                    -> graph.py: finalize
+#       2-12) 【コード】各従業員に通知(仮実装)                -> graph.py: send_final_shift
+#   3)  ノードが使う道具
+#       3-1)  検査と計算                                    -> node/checks.py
+#       3-2)  LLM の用意・JSON の取り出し                    -> node/llm.py
+#       3-3)  LLM に渡す文章                                -> node/prompts.py
+#   4)  グラフの設計: ノードを登録する                        -> graph.py の下のほう(builder)
+#   5)  グラフの連結: ノードをつなぐ                          -> graph.py の下のほう(builder)
+#   6)  グラフの実行                                        -> shift_graph.py (このファイル)
 # ==============================================================================
 import sys, time
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.types import Command
 from settings import DB_URL, STORE_SETTINGS     # STORE_SETTINGS は、テストが書き換えるので、ここからも見えるようにしておく
-from graph import builder                       # 外から shift_graph.builder で使えるように / 밖에서 shift_graph.builder로 쓸 수 있도록
+from graph import builder                       # 外から shift_graph.builder で使えるように
 
 
 
 
 
 # ===============================================================================
-# 5) グラフ実行
+# 6) グラフ実行
 # ===============================================================================
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "start"            # 実行モードを取得する（デフォルトは "start"）
@@ -55,7 +49,7 @@ if __name__ == "__main__":
         graph = builder.compile(checkpointer=saver)          # グラフをコンパイルする
         config = {"configurable": {"thread_id": thread}}     # スレッドIDを設定する
         start = time.time()                                  # 開始時間を記録する
-
+    
         if mode == "start":
             inp = {"store_id": 101}
         elif mode == "approve":
