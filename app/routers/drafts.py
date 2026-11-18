@@ -45,6 +45,7 @@ def _need_thread(d: dict) -> str:
 _VCOLS = "violation_id, check_code, work_date, employee_id, detail, allowed_by, allowed_at"
 
 
+# 仕様書V9 6章 005-管理者用｜初稿の取得 / 명세서 V9 6장 005-관리자용｜초안 조회
 @router.get("/admin/drafts/{draft_id}", summary="案の取得 / 안 조회")
 def get_draft(draft_id: int, me: dict = Depends(current_manager)):
     with tx() as conn:
@@ -70,6 +71,7 @@ class WaiveIn(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
 
 
+# 仕様書V9 6章 005-管理者用｜違反の許可 / 명세서 V9 6장 005-관리자용｜위반 허용
 @router.post("/admin/drafts/{draft_id}/waive", status_code=201, summary="違反の例外許可 / 위반 예외 허가")
 def waive(draft_id: int, body: WaiveIn, me: dict = Depends(current_manager)):
     try:
@@ -95,6 +97,7 @@ def waive(draft_id: int, body: WaiveIn, me: dict = Depends(current_manager)):
             f"WHERE violation_id = %s RETURNING {_VCOLS}", (me["manager_id"], body.reason, vid)).fetchone()
 
 
+# 仕様書V9 6章 005-管理者用｜初稿の承認（確定） / 명세서 V9 6장 005-관리자용｜초안 승인(확정)
 @router.post("/admin/drafts/{draft_id}/approve", summary="案の承認(確定) / 안 승인(확정)")
 def approve(draft_id: int, me: dict = Depends(current_manager), gw: GraphGateway = Depends(get_gateway)):
     """未解決の違反が残っていれば 409（一覧つき）。通れば 記録 → 確定 → グラフ再開 を1トランザクションで。
@@ -124,6 +127,7 @@ class RejectIn(BaseModel):
     instruction: str = Field(default="", max_length=1000)
 
 
+# 仕様書V9 6章 005-管理者用｜初稿の差し戻し（再調整） / 명세서 V9 6장 005-관리자용｜초안 반려(재조정)
 @router.post("/admin/drafts/{draft_id}/reject", summary="案の差し戻し(再編成の依頼) / 안 반려(재편성 요청)")
 def reject(draft_id: int, body: RejectIn, me: dict = Depends(current_manager),
            gw: GraphGateway = Depends(get_gateway)):
@@ -166,6 +170,7 @@ class EditIn(BaseModel):
     reason: str | None = Field(default=None, max_length=500)
 
 
+# 仕様書V9 6章 005-管理者用｜配置の手修正 / 명세서 V9 6장 005-관리자용｜배치 수동 수정
 @router.put("/admin/drafts/{draft_id}/assignments", summary="配置の手修正 / 배치 수동 수정")
 def edit_assignments(draft_id: int, body: EditIn | list[EditItem], me: dict = Depends(current_manager),
                      gw: GraphGateway = Depends(get_gateway)):
@@ -213,6 +218,7 @@ def edit_assignments(draft_id: int, body: EditIn | list[EditItem], me: dict = De
     return {"saved": len(edits), "total_assignments": len(full), "graph": graph}
 
 
+# 仕様書V9 6章 005-管理者用｜修正履歴の取得 / 명세서 V9 6장 005-관리자용｜수정 이력 조회
 @router.get("/admin/drafts/{draft_id}/edits", summary="修正履歴 / 수정 이력")
 def list_edits(draft_id: int, me: dict = Depends(current_manager)):
     """専用の修正ログ表は無いので manager_actions の記録を返す（誰が・いつ・何をしたか）。

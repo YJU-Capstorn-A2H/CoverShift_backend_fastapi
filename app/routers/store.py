@@ -17,12 +17,14 @@ class StorePatch(BaseModel):
     name: str = Field(min_length=1, max_length=100)
 
 
+# 仕様書V9 2-3 設定・提出のCRUD API｜店舗の取得・更新 / 명세서 V9 2-3 설정・제출 CRUD API｜점포 조회・수정
 @router.get("/store", summary="店舗の取得 / 점포 조회")
 def get_store(me: dict = Depends(current_manager)):
     with tx() as conn:
         return conn.execute("SELECT store_id, name FROM stores WHERE store_id = %s", (me["store_id"],)).fetchone()
 
 
+# 仕様書V9 2-3 設定・提出のCRUD API｜店舗の取得・更新 / 명세서 V9 2-3 설정・제출 CRUD API｜점포 조회・수정
 @router.patch("/store", summary="店舗の更新 / 점포 수정")
 def patch_store(body: StorePatch, me: dict = Depends(current_manager)):
     with tx() as conn:
@@ -63,6 +65,7 @@ class CopyIn(BaseModel):
 _COLS = "rule_id, weekday, start_time, end_time, min_headcount, min_qualified"
 
 
+# 仕様書V9 2-3 設定・提出のCRUD API｜時間帯ルールの一覧・登録 / 명세서 V9 2-3 설정・제출 CRUD API｜시간대 규칙 목록・등록
 @router.get("/store/time-rules", summary="時間帯ルールの一覧 / 시간대 규칙 목록")
 def list_rules(weekday: int | None = None, me: dict = Depends(current_manager)):
     sql = f"SELECT {_COLS} FROM store_time_rules WHERE store_id = %s"
@@ -74,6 +77,7 @@ def list_rules(weekday: int | None = None, me: dict = Depends(current_manager)):
         return conn.execute(sql + " ORDER BY weekday, start_time", params).fetchall()
 
 
+# 仕様書V9 2-3 設定・提出のCRUD API｜時間帯ルールの一覧・登録 / 명세서 V9 2-3 설정・제출 CRUD API｜시간대 규칙 목록・등록
 @router.post("/store/time-rules", status_code=201, summary="時間帯ルールの登録 / 시간대 규칙 등록")
 def create_rule(body: RuleIn, me: dict = Depends(current_manager)):
     with tx() as conn:
@@ -84,6 +88,7 @@ def create_rule(body: RuleIn, me: dict = Depends(current_manager)):
         ).fetchone()
 
 
+# 仕様書V9 2-3 設定・提出のCRUD API｜曜日ルールのコピー / 명세서 V9 2-3 설정・제출 CRUD API｜요일 규칙 복사
 @router.post("/store/time-rules/copy", summary="曜日ルールの複製 / 요일 규칙 복사")
 def copy_rules(body: CopyIn, me: dict = Depends(current_manager)):
     """ある曜日の規則を別の曜日にコピーする。重なる曜日があれば全体を取り消して 409。
@@ -108,6 +113,7 @@ def copy_rules(body: CopyIn, me: dict = Depends(current_manager)):
     return {"copied": n}
 
 
+# 仕様書V9 2-3 設定・提出のCRUD API｜時間帯ルールの更新・削除 / 명세서 V9 2-3 설정・제출 CRUD API｜시간대 규칙 수정・삭제
 @router.patch("/store/time-rules/{rule_id}", summary="時間帯ルールの更新 / 시간대 규칙 수정")
 def patch_rule(rule_id: int, body: RulePatch, me: dict = Depends(current_manager)):
     changes = body.model_dump(exclude_unset=True)
@@ -123,6 +129,7 @@ def patch_rule(rule_id: int, body: RulePatch, me: dict = Depends(current_manager
     return row
 
 
+# 仕様書V9 2-3 設定・提出のCRUD API｜時間帯ルールの更新・削除 / 명세서 V9 2-3 설정・제출 CRUD API｜시간대 규칙 수정・삭제
 @router.delete("/store/time-rules/{rule_id}", status_code=204, summary="時間帯ルールの削除 / 시간대 규칙 삭제")
 def delete_rule(rule_id: int, me: dict = Depends(current_manager)):
     # store_task_needs は CASCADE で一緒に消える / store_task_needs는 CASCADE로 함께 삭제된다

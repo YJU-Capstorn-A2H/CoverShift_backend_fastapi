@@ -35,6 +35,7 @@ def _load_link(conn, token: str) -> dict:
     return row
 
 
+# 仕様書V9 2-2 認証API｜提出ページのデータ取得 / 명세서 V9 2-2 인증 API｜제출 페이지 데이터 조회
 @router.get("/submit/{token}", summary="提出ページ用データ / 제출 페이지 데이터")
 def get_submit(token: str):
     with tx() as conn:
@@ -74,6 +75,7 @@ class SubmitIn(BaseModel):
         return self
 
 
+# 仕様書V9 2-2 認証API｜希望の提出・修正（UPSERT） / 명세서 V9 2-2 인증 API｜희망 제출・수정(UPSERT)
 @router.put("/submit/{token}/availability", summary="希望の提出・修正 / 희망 제출・수정")
 def put_availability(token: str, body: SubmitIn):
     """同じ日の再入力は上書き。社員だけ希望休・出勤希望の上限を数える（半休は数えない）。
@@ -116,6 +118,7 @@ class LineLinkIn(BaseModel):
     line_user_id: str
 
 
+# 仕様書V9 2-2 認証API｜LINEアカウントの連携 / 명세서 V9 2-2 인증 API｜LINE 계정 연결
 @router.post("/line/link", summary="LINEアカウント連携 / LINE 계정 연동")
 def line_link(body: LineLinkIn):
     """合言葉が有効なら line_user_id を保存し、合言葉を空にする（1回きり）。
