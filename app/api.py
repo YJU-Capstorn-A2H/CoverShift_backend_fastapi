@@ -3,12 +3,13 @@
 # 모든 라우터를 /api 아래로 모은다. 여기에 추가하면 main.py는 바꾸지 않아도 된다.
 from fastapi import APIRouter
 
-from app.routers import drafts, employees, not_implemented, periods, public, store
+from app.routers import auth, drafts, employees, not_implemented, periods, public, store
 
 api_router = APIRouter(prefix="/api")
 
 # 実装済み / 구현 완료
 # ※ 認証（register/login/logout）は E9（ヒョクジュン担当）。ここには含めない / 인증은 E9(혁준 담당). 여기에는 포함하지 않는다
+api_router.include_router(auth.router, tags=["2-2 認証 / 인증"])
 api_router.include_router(store.router, tags=["2-3 店舗・時間帯ルール / 점포・시간대 규칙"])
 api_router.include_router(employees.router, tags=["2-2 従業員・業務 / 직원・업무"])
 api_router.include_router(periods.router, tags=["月・提出リンク・編成開始 / 월・제출 링크・편성 시작"])

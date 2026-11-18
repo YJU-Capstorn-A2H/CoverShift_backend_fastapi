@@ -40,6 +40,7 @@ class PeriodPatch(BaseModel):
     work_request_limit: int | None = Field(default=None, ge=0, le=31)
 
 
+# 仕様書V9 2-3 設定・提出のCRUD API｜期間の一覧・登録（MVP） / 명세서 V9 2-3 설정・제출 CRUD API｜기간 목록・등록(MVP)
 @router.get("/shift-periods", summary="月の設定の一覧 / 월 설정 목록")
 def list_periods(me: dict = Depends(current_manager)):
     with tx() as conn:
@@ -47,6 +48,7 @@ def list_periods(me: dict = Depends(current_manager)):
                             (me["store_id"],)).fetchall()
 
 
+# 仕様書V9 2-3 設定・提出のCRUD API｜期間の一覧・登録（MVP） / 명세서 V9 2-3 설정・제출 CRUD API｜기간 목록・등록(MVP)
 @router.post("/shift-periods", status_code=201, summary="月の設定の登録 / 월 설정 등록")
 def create_period(body: PeriodIn, me: dict = Depends(current_manager)):
     with tx() as conn:        # 同じ月は1つだけ（UNIQUE → 409）/ 같은 달은 하나뿐(UNIQUE → 409)
@@ -57,6 +59,7 @@ def create_period(body: PeriodIn, me: dict = Depends(current_manager)):
              body.off_request_limit, body.work_request_limit)).fetchone()
 
 
+# 仕様書V9 2-3 設定・提出のCRUD API｜期間の更新（MVP） / 명세서 V9 2-3 설정・제출 CRUD API｜기간 수정(MVP)
 @router.patch("/shift-periods/{period_id}", summary="月の設定の更新 / 월 설정 수정")
 def patch_period(period_id: int, body: PeriodPatch, me: dict = Depends(current_manager)):
     # 締切を変えると提出リンクの有効期限も変わる（リンクに別の期限は無い）
@@ -73,6 +76,7 @@ def patch_period(period_id: int, body: PeriodPatch, me: dict = Depends(current_m
     return row
 
 
+# 仕様書V9 2-2 認証API｜提出リンクの一括発行・送信 / 명세서 V9 2-2 인증 API｜제출 링크 일괄 발급・발송
 @router.post("/shift-periods/{period_id}/submission-links", status_code=201,
              summary="提出リンクの一括発行・発送 / 제출 링크 일괄 발급・발송")
 def issue_submission_links(period_id: int, me: dict = Depends(current_manager)):
@@ -108,6 +112,7 @@ def issue_submission_links(period_id: int, me: dict = Depends(current_manager)):
             "skipped_no_line": skipped, "links": links}
 
 
+# 仕様書V9 6章 002-管理者用｜編成を今すぐ開始 / 명세서 V9 6장 002-관리자용｜편성 즉시 시작
 @router.post("/admin/shift-periods/{period_id}/start-now", status_code=202,
              summary="編成を今すぐ開始 / 편성을 지금 바로 시작")
 def start_now(period_id: int, me: dict = Depends(current_manager), gw: GraphGateway = Depends(get_gateway)):

@@ -44,6 +44,7 @@ class EmployeePatch(BaseModel):
     fixed_weekdays: list[int] | None = None
 
 
+# 仕様書V9 2-3 設定・提出のCRUD API｜従業員の一覧・登録 / 명세서 V9 2-3 설정・제출 CRUD API｜직원 목록・등록
 @router.get("/employees", summary="従業員の一覧 / 직원 목록")
 def list_employees(me: dict = Depends(current_manager)):
     with tx() as conn:
@@ -51,6 +52,7 @@ def list_employees(me: dict = Depends(current_manager)):
                             (me["store_id"],)).fetchall()
 
 
+# 仕様書V9 2-3 設定・提出のCRUD API｜従業員の一覧・登録 / 명세서 V9 2-3 설정・제출 CRUD API｜직원 목록・등록
 @router.post("/employees", status_code=201, summary="従業員の登録 / 직원 등록")
 def create_employee(body: EmployeeIn, me: dict = Depends(current_manager)):
     with tx() as conn:
@@ -61,6 +63,7 @@ def create_employee(body: EmployeeIn, me: dict = Depends(current_manager)):
              body.weekly_days, body.fixed_weekdays)).fetchone()
 
 
+# 仕様書V9 2-3 設定・提出のCRUD API｜従業員の取得・更新 / 명세서 V9 2-3 설정・제출 CRUD API｜직원 조회・수정
 @router.get("/employees/{employee_id}", summary="従業員の取得 / 직원 조회")
 def get_employee(employee_id: int, me: dict = Depends(current_manager)):
     with tx() as conn:
@@ -71,6 +74,7 @@ def get_employee(employee_id: int, me: dict = Depends(current_manager)):
     return row
 
 
+# 仕様書V9 2-3 設定・提出のCRUD API｜従業員の取得・更新 / 명세서 V9 2-3 설정・제출 CRUD API｜직원 조회・수정
 @router.patch("/employees/{employee_id}", summary="従業員の更新 / 직원 수정")
 def patch_employee(employee_id: int, body: EmployeePatch, me: dict = Depends(current_manager)):
     # 削除APIは無い（退職の扱いは未決）/ 삭제 API는 없다(퇴직 처리는 미결)
@@ -87,6 +91,7 @@ def patch_employee(employee_id: int, body: EmployeePatch, me: dict = Depends(cur
     return row
 
 
+# 仕様書V9 2-2 認証API｜LINE連携リンクの発行 / 명세서 V9 2-2 인증 API｜LINE 연결 링크 발급
 @router.post("/employees/{employee_id}/link-token", status_code=201,
              summary="LINE連携リンクの発行 / LINE 연동 링크 발급")
 def issue_link_token(employee_id: int, me: dict = Depends(current_manager)):
@@ -114,6 +119,7 @@ class TaskPatch(BaseModel):
     sort_order: int | None = Field(default=None, ge=0, le=32767)
 
 
+# 仕様書V9 2-3 設定・提出のCRUD API｜業務の一覧・登録 / 명세서 V9 2-3 설정・제출 CRUD API｜업무 목록・등록
 @router.get("/tasks", summary="業務の一覧 / 업무 목록")
 def list_tasks(me: dict = Depends(current_manager)):
     with tx() as conn:
@@ -121,6 +127,7 @@ def list_tasks(me: dict = Depends(current_manager)):
                             (me["store_id"],)).fetchall()
 
 
+# 仕様書V9 2-3 設定・提出のCRUD API｜業務の一覧・登録 / 명세서 V9 2-3 설정・제출 CRUD API｜업무 목록・등록
 @router.post("/tasks", status_code=201, summary="業務の登録 / 업무 등록")
 def create_task(body: TaskIn, me: dict = Depends(current_manager)):
     with tx() as conn:
@@ -129,6 +136,7 @@ def create_task(body: TaskIn, me: dict = Depends(current_manager)):
                             (me["store_id"], body.name, body.sort_order)).fetchone()
 
 
+# 仕様書V9 2-3 設定・提出のCRUD API｜業務の更新・削除 / 명세서 V9 2-3 설정・제출 CRUD API｜업무 수정・삭제
 @router.patch("/tasks/{task_id}", summary="業務の更新 / 업무 수정")
 def patch_task(task_id: int, body: TaskPatch, me: dict = Depends(current_manager)):
     changes = body.model_dump(exclude_unset=True)
@@ -144,6 +152,7 @@ def patch_task(task_id: int, body: TaskPatch, me: dict = Depends(current_manager
     return row
 
 
+# 仕様書V9 2-3 設定・提出のCRUD API｜業務の更新・削除 / 명세서 V9 2-3 설정・제출 CRUD API｜업무 수정・삭제
 @router.delete("/tasks/{task_id}", status_code=204, summary="業務の削除 / 업무 삭제")
 def delete_task(task_id: int, me: dict = Depends(current_manager)):
     with tx() as conn:
