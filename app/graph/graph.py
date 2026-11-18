@@ -6,7 +6,7 @@ import copy, json, time
 from typing import Literal
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import Command, interrupt
-from settings import DB_URL, SERVER, STAFF_SOURCE, MANAGER_REQUEST_LIMIT, llm_all_staff, id_to_name, get_store
+from settings import DB_URL, MANAGER_REQUEST_LIMIT, llm_all_staff, id_to_name, get_store
 from state import State
 from routes import route_2, route_3
 from node.checks import (all_dates, check_coverage, check_qualification, check_requests, check_closing, check_double_booking,
@@ -15,9 +15,12 @@ from node.llm import get_llm, extract_json
 from node.db import load_period_data
 from node.convert import split_names
 from node.line import send_line, make_final_text
-from node.mcp_tools import call_mcp_tool
 from node.prompts import (rules, make_qualification_text, make_days_text,
                           make_headcount_text, make_problem_text, make_instruction_text, make_prev_draft_text)
+
+# MCP(D5): 従業員データを MCP サーバー経由で読む(collect が呼ぶ)
+from settings import SERVER, STAFF_SOURCE
+from node.mcp_tools import call_mcp_tool
 
 
 def get_name(state, staff_id):    # 従業員の表示名。DB から読んだときは名前を読まないので「ID3」の形(名前は画面・API 側が staff_id から出す)。無ければ staff_data.json の表から

@@ -70,6 +70,7 @@ dependencies = [
     "zstandard==0.25.0",
     "pyjwt>=2.15.1",
     "bcrypt>=5.0.0",
+    "mcp>=2.3.0",
 ]
 
 [dependency-groups]
