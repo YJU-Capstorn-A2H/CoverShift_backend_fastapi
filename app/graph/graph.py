@@ -6,7 +6,7 @@ import copy, json, time
 from typing import Literal
 from langgraph.graph import StateGraph, START, END
 from langgraph.types import Command, interrupt
-from settings import DB_URL, MANAGER_REQUEST_LIMIT, llm_all_staff, id_to_name, get_store
+from settings import DB_URL, SERVER, STAFF_SOURCE, MANAGER_REQUEST_LIMIT, llm_all_staff, id_to_name, get_store
 from state import State
 from routes import route_2, route_3
 from node.checks import (all_dates, check_coverage, check_qualification, check_requests, check_closing, check_double_booking,
@@ -15,10 +15,9 @@ from node.llm import get_llm, extract_json
 from node.db import load_period_data
 from node.convert import split_names
 from node.line import send_line, make_final_text
+from node.mcp_tools import call_mcp_tool
 from node.prompts import (rules, make_qualification_text, make_days_text,
                           make_headcount_text, make_problem_text, make_instruction_text, make_prev_draft_text)
-# import asyncio                          # MCP を使うときに戻す
-# from mcp_call import call_mcp_tool
 
 
 def get_name(state, staff_id):    # 従業員の表示名。DB から読んだときは名前を読まないので「ID3」の形(名前は画面・API 側が staff_id から出す)。無ければ staff_data.json の表から
@@ -33,20 +32,23 @@ def get_name(state, staff_id):    # 従業員の表示名。DB から読んだ�
 
 # 2-1) collect -- 最初に1回だけ。スタッフの希望を読んで、State を初期化する
 #   出力: llm_all_staff(全員のデータ)と、各カウンターの初期値
-#   いまは settings.py のデータをそのまま渡す(B1 で DB から、D5 で MCP から読む形に置き換える)
+#   period_id があれば DB から読む。従業員データは STAFF_SOURCE で、MCP サーバー経由(mcp)か DB 直読み(db)かを選ぶ(D5)
+#   period_id が無ければ、今までどおり staff_data.json
 def collect(state):
     print("希望シフトを収集中...")
-    # data = asyncio.run(call_mcp_tool(SERVER, "get_staff_availability"))                                 # MCPサーバーからデータを取得する
-    # mcp_staff = data["staff"]                                                                           # MCPサーバーから取得したスタッフデータ
-    # assert mcp_staff == llm_all_staff, "MCPサーバーから取得したスタッフデータと、初期データが一致しません。"  # debug用のアサーション
-
     db_update = {}                                          # DB から読んだときだけ入る(store_id・period・store_settings)
     staff_for_llm = llm_all_staff                           # period_id が無いときは、今までどおり staff_data.json のデータ
     if state.get("period_id"):                              # period_id があれば DB から読む(B1)
-        data = load_period_data(DB_URL, state["period_id"])
+        data = load_period_data(DB_URL, state["period_id"], with_staff=(STAFF_SOURCE == "db"))   # mcp のときは、従業員は DB から直接読まない
         if state.get("store_id") not in (None, data["store_id"]):
             raise ValueError(f"store_id={state['store_id']} と period_id={state['period_id']} の店が違います(DB では store_id={data['store_id']})")
-        _, staff_for_llm = split_names(data["staff_list"])  # 名前は State に入れない(DB からはそもそも読まない)
+        if STAFF_SOURCE == "mcp":                           # 従業員データは MCP サーバーの道具から(呼ぶのはコード。LLM には見せない)
+            staff_data = call_mcp_tool(SERVER, "get_staff_availability", {"period_id": state["period_id"]})
+            if staff_data["store_id"] != data["store_id"]:
+                raise ValueError(f"MCP の従業員データの店(store_id={staff_data['store_id']})が、期間の店(store_id={data['store_id']})と違います")
+            staff_for_llm = staff_data["staff"]             # 名前は入っていない
+        else:
+            _, staff_for_llm = split_names(data["staff_list"])  # 名前は State に入れない(DB からはそもそも読まない)
         db_update = {"store_id": data["store_id"], "period": data["period"], "store_settings": data["store_settings"]}
     elif not llm_all_staff:
         raise ValueError("period_id がなく、staff_data.json も見つかりません")

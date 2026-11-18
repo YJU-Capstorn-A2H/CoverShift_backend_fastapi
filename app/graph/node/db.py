@@ -7,9 +7,10 @@ from psycopg.rows import dict_row
 from node.convert import make_period, make_staff_list, make_store_settings
 
 
-def load_period_data(db_url, period_id):
+def load_period_data(db_url, period_id, with_staff=True):
     """period_id(shift_periods の行)の1か月分に必要なデータを、まとめて読む。
     戻り値: {"store_id", "period", "store_settings", "staff_list"}  (名前は読まない。staff_list の staff_name は None)
+    with_staff=False なら従業員と希望は読まない(staff_list は None)。従業員は MCP から読むとき(D5)に使う
     読んでいる間に他の人が書き換えても、同じ時点のデータだけを見るようにする(REPEATABLE READ・読み取り専用)"""
     with psycopg.connect(db_url, row_factory=dict_row) as conn:
         conn.isolation_level = psycopg.IsolationLevel.REPEATABLE_READ
@@ -28,6 +29,10 @@ def load_period_data(db_url, period_id):
         rule_rows = conn.execute(
             "SELECT weekday, start_time, end_time, min_headcount, min_qualified FROM store_time_rules "
             "WHERE store_id = %s ORDER BY weekday, start_time", (store_id,)).fetchall()
+        if not with_staff:
+            if not rule_rows:
+                print(f"【注意】store_id={store_id} の時間帯ルール(store_time_rules)がありません。人数・資格者の検査は何も見ません。")
+            return {"store_id": store_id, "period": period, "store_settings": make_store_settings(rule_rows, period_row), "staff_list": None}
         employee_rows = conn.execute(
             "SELECT employee_id, is_regular, has_qualification, closing_ok FROM employees "    # name は読まない(名前を見られないロールで読むため。基準文書 11/07)
             "WHERE store_id = %s ORDER BY employee_id", (store_id,)).fetchall()

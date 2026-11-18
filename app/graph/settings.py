@@ -7,7 +7,10 @@ from dotenv import load_dotenv
 
 # 0) 初期設定
 load_dotenv()                                                 # 環境変数をロードする
-SERVER = str(Path(__file__).parent / "staff_mcp_server.py")   # MCPサーバーのファイル名
+SERVER = str(Path(__file__).parents[1] / "mcp" / "server.py")   # MCPサーバーのファイル(app/mcp/server.py)
+STAFF_SOURCE = os.environ.get("STAFF_SOURCE", "mcp")          # period_id があるとき、従業員データをどこから読むか: mcp(MCPサーバー経由) / db(DB を直接読む)
+if STAFF_SOURCE not in ("mcp", "db"):
+    raise ValueError(f"STAFF_SOURCE は mcp か db です: {STAFF_SOURCE}")
 
 DB_URL = os.environ["DATABASE_URL"]                           # DBの接続URL
 STAFF_FILE = os.environ.get("STAFF_FILE", str(Path(__file__).parent / "staff_data.json"))   # スタッフデータのjsonファイル名(既定は、このファイルと同じフォルダ)
