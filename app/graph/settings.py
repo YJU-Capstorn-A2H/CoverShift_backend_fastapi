@@ -1,13 +1,14 @@
 # settings.py -- 設定・定数・店舗ごとの設定・スタッフデータの読み込み
 #   他のファイルに依存しない(一番下の土台)。B1 で DB から、D5 で MCP から読む形に置き換える場所
-import os, json
+import os, json, sys
 from pathlib import Path
 from dotenv import load_dotenv
 
 
 # 0) 初期設定
 load_dotenv()                                                 # 環境変数をロードする
-SERVER = str(Path(__file__).parents[1] / "mcp" / "server.py")   # MCPサーバーのファイル(app/mcp/server.py)
+SERVER = str(Path(__file__).parents[1] / "mcp" / "mcp_server.py")   # MCPサーバーのファイル(app/mcp/mcp_server.py)
+sys.path.insert(0, str(Path(__file__).parents[1] / "mcp"))    # app/mcp の mcp_client.py を import できるようにする
 STAFF_SOURCE = os.environ.get("STAFF_SOURCE", "mcp")          # period_id があるとき、従業員データをどこから読むか: mcp(MCPサーバー経由) / db(DB を直接読む)
 if STAFF_SOURCE not in ("mcp", "db"):
     raise ValueError(f"STAFF_SOURCE は mcp か db です: {STAFF_SOURCE}")

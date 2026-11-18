@@ -20,7 +20,7 @@ from node.prompts import (rules, make_qualification_text, make_days_text,
 
 # MCP(D5): 従業員データを MCP サーバー経由で読む(collect が呼ぶ)
 from settings import SERVER, STAFF_SOURCE
-from node.mcp_tools import call_mcp_tool
+from mcp_client import call_mcp_tool
 
 
 def get_name(state, staff_id):    # 従業員の表示名。DB から読んだときは名前を読まないので「ID3」の形(名前は画面・API 側が staff_id から出す)。無ければ staff_data.json の表から

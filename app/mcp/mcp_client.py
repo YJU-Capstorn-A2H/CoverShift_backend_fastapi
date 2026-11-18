@@ -1,4 +1,4 @@
-# node/mcp_tools.py -- グラフから MCP サーバー(app/mcp/server.py)の道具を呼ぶ部品(D5)
+# app/mcp/mcp_client.py -- グラフから MCP サーバー(app/mcp/mcp_server.py)の道具を呼ぶ部品(D5)
 #   ・いまは「コード(collect)が呼ぶ」だけ。LLM には道具を渡していない(auto_draft は llm.invoke で1回呼ぶだけ)
 #   ・LLM に道具を渡すときは、LLM_TOOLS に名前を入れたものだけを渡す(書き込み・送信の道具は入れない)
 #   ・サーバーは呼ぶたびに子プロセスで起動し、終わったら止める(stdio)

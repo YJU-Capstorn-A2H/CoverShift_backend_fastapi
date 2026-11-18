@@ -1,15 +1,15 @@
-# app/mcp/server.py -- MCP サーバー(D5)。DB を読む道具を、MCP の後ろに置く
+# app/mcp/mcp_server.py -- MCP サーバー(D5)。DB を読む道具を、MCP の後ろに置く
 #   ・道具は1つだけ(基準文書 11/04「MCP 読み取り道具1つ(従業員情報)」)
 #   ・読むだけ。書き込みの道具は置かない(書き込みはコードが検査してから行う。教授 10/16)
 #   ・名前は返さない(employees.name は読まない。基準文書 11/07)
 #   ・つなぎ方は stdio(グラフ側が、このファイルを子プロセスとして起動し、標準入出力でやりとりする)
 #   ・DB の URL は、起動した側から環境変数 DATABASE_URL で受け取る(.env は読まない)
 #
-# 道具の一覧(「呼ぶ人」と「LLM に見せるか」は、グラフ側の node/mcp_tools.py の LLM_TOOLS で決める)
+# 道具の一覧(「呼ぶ人」と「LLM に見せるか」は、同じ app/mcp の mcp_client.py の LLM_TOOLS で決める)
 #   | 道具                    | 触るもの        | 呼ぶ人            | LLM に見せるか |
 #   | get_staff_availability  | DB(読むだけ)   | コード(collect) | 見せない       |
 #
-# 単体で起動する: python app/mcp/server.py   (普段はグラフが起動するので、手で起動する必要はない)
+# 単体で起動する: python app/mcp/mcp_server.py   (普段はグラフが起動するので、手で起動する必要はない)
 import contextlib
 import os
 import sys

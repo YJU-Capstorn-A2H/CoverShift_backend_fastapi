@@ -1,4 +1,4 @@
-# test_mcp.py -- D5 のテスト: MCP サーバー(app/mcp/server.py)の道具 get_staff_availability と、collect の切り替え(STAFF_SOURCE)
+# test_mcp.py -- D5 のテスト: MCP サーバー(app/mcp/mcp_server.py)の道具 get_staff_availability と、collect の切り替え(STAFF_SOURCE)
 # 実行前に、テスト用に使ってよい DB の URL を、環境変数 TEST_DATABASE_URL に入れる(無ければ、このテストは何もせず終わる)
 #   例(PowerShell):  $env:TEST_DATABASE_URL = "postgresql://covershift:パスワード@localhost:5433/covershift"
 #   ・テストは cs_test_d5 という専用の schema を作って、その中だけで動く。終わったら消す
@@ -34,7 +34,7 @@ import psycopg
 from mcp import Client
 import graph as graph_module
 import node.db as db
-import node.mcp_tools as mcp_tools
+import mcp_client
 from node.convert import split_names
 import settings
 
@@ -79,7 +79,7 @@ def make_test_data():
     return period_ids
 
 
-def load_server_module():          # app/mcp/server.py を読み込む(同じプロセスの中でつなぐテスト用)
+def load_server_module():          # app/mcp/mcp_server.py を読み込む(同じプロセスの中でつなぐテスト用)
     spec = importlib.util.spec_from_file_location("covershift_mcp_server", SERVER)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -97,10 +97,10 @@ try:
     tools = asyncio.run(list_tools_in_process(load_server_module().server))
     check("M1a: 道具は get_staff_availability の1つだけ", [tool.name for tool in tools] == ["get_staff_availability"])
     check("M1b: 読むだけの印(read_only_hint)が付いている", tools[0].annotations.read_only_hint is True and tools[0].annotations.destructive_hint is False)
-    check("M1c: LLM に見せる道具は無い(LLM_TOOLS が空)", mcp_tools.LLM_TOOLS == set())
+    check("M1c: LLM に見せる道具は無い(LLM_TOOLS が空)", mcp_client.LLM_TOOLS == set())
 
     # --- M2) 子プロセス(stdio)で呼ぶ ----------------------------------------------------------
-    result = mcp_tools.call_mcp_tool(SERVER, "get_staff_availability", {"period_id": period_id})
+    result = mcp_client.call_mcp_tool(SERVER, "get_staff_availability", {"period_id": period_id})
     _, expected = split_names(db.load_period_data(TEST_URL, period_id)["staff_list"])
     check("M2a: store_id は店7", result["store_id"] == 7)
     check("M2b: DB 直読みと同じ従業員データ(店7 の2人)", result["staff"] == expected and len(result["staff"]) == 2)
@@ -111,15 +111,15 @@ try:
 
     # --- M3) エラー・出力 -----------------------------------------------------------------
     try:
-        mcp_tools.call_mcp_tool(SERVER, "get_staff_availability", {"period_id": period_id + 999})
+        mcp_client.call_mcp_tool(SERVER, "get_staff_availability", {"period_id": period_id + 999})
         check("M3a: 無い period_id はエラー(理由つき)", False)
     except RuntimeError as error:
         check("M3a: 無い period_id はエラー(理由つき)", "shift_periods にありません" in str(error))
-    result_no_rules = mcp_tools.call_mcp_tool(SERVER, "get_staff_availability", {"period_id": period_id_no_rules})
+    result_no_rules = mcp_client.call_mcp_tool(SERVER, "get_staff_availability", {"period_id": period_id_no_rules})
     check("M3b: ルールの無い店9 でも呼べる(注意の print は標準エラーへ)", result_no_rules["store_id"] == 9 and len(result_no_rules["staff"]) == 1)
 
     # --- M4) 子プロセスに渡す環境変数 ------------------------------------------------------------
-    check("M4: サーバーに渡すのは DATABASE_URL だけ(API キーは渡さない)", mcp_tools.SERVER_ENV_KEYS == ["DATABASE_URL"])
+    check("M4: サーバーに渡すのは DATABASE_URL だけ(API キーは渡さない)", mcp_client.SERVER_ENV_KEYS == ["DATABASE_URL"])
 
     # --- M5) collect の切り替え(STAFF_SOURCE) ------------------------------------------------------
     graph_module.STAFF_SOURCE = "mcp"
