@@ -1,0 +1,1206 @@
+
+CoverShift 통합 백엔드 API 및 DB 스키마 명세서 V9
+목차目次★ 11/20 전에 읽는 곳★ 11/20までに読むところ1. 처리 흐름1. 処理の流れ2. MVP 인증・CRUD2. MVP 認証・CRUD3. 테이블 일람3. テーブル一覧4. 전체 DDL4. 全DDL5. 검증 코드・틀5. 検証コード・枠6. API 전체 사양6. API全仕様7. MCP 도구7. MCPツール8. 스케줄러8. スケジューラー9. 미결9. 未決10. 검증 방법10. 検証方法11. 개정 요약11. 改訂の要約12. 확정 사항12. 確定事項부록 A. ER 도付録 A. ER図
+日本語한국어☀ Light☾ Dark
+CoverShift · 2026-11-12 · 작성: 아즈키(기술 담당) · 상태: 초안, 리더 확인 대기
+# 통합 백엔드 API 및 DB 스키마 명세서 V9
+V8(11/03판)을 11/07의 MVP 설계와 11/08 기준 문서에 맞춰 고친 판(바뀐 점은 11장 맨 위). V8은 V7(27 테이블)을 10/16~10/29의 결정에 맞춰 고친 판이었다. 구현에 필요한 소재(전체 DDL・API 사양・검증 코드・처리 흐름)를 이 문서에 모두 담았다. V7 원문은 프로젝트의 V7 문서에 그대로 남아 있다.
+읽는 법. 상태 표시: 유지 변경 신규 삭제 보류 제안(미승인). 「확정」은 팀·교수 면담에서 결정된 것, 「제안」은 이 문서의 제안입니다. 확인하지 못한 내용은 단정하지 않고 （추측입니다）로 적었습니다. AI는 제안만 하고 최종 확정은 사람(관리자)이 합니다.
+⚠ 11/07 갱신. 인증(로그인・관리자 교대・LINE 연결・제출 링크)과 설정 CRUD는 MVP 인증・CRUD 장이 우선합니다. 1-0장과 6장의 해당 항목은 구 설계입니다.
+[id=s-read] 
+## 11/20 전에 읽는 곳과 담당
+설계를 바꾼 것은 아니고 인(표시)을 붙였다. 세 가지 중 하나가 각 섹션・테이블・미결 사항에 붙어 있다.
+데모에 필요 M-n 11/20 데모에 필요(M-n = 아래 8개 중 어느 것을 위한 것인지)　정해 두기만 지금 깊게 안 봐도 되지만 나중에 바꾸기 어렵다　나중(12/4 이후) 12/4 이후도 된다
+#### M-1~M-8 (MVP 범위 「넣음」 8항목, 위에서부터 번호)
+- M-1 편성 그래프 전체(희망→초안→검증→승인→확정→통지)
+- M-2 점장 지시→틀 규칙(3개)
+- M-3 관리자 Web: 승인・재편성 요청・편집 모드
+- M-4 점장 가입・로그인(초대 코드・JWT)
+- M-5 직원 답장 버튼+LINE 스텁
+- M-6 직원 연락(맨 마지막・늦으면 뺌)
+- M-7 MCP 읽기 도구 1개(직원 정보)
+- M-8 휴게 포함 필요 인원(점장이 입력)
+#### 읽는 순서
+ | # | 어디 | 무엇을 위해 | 담당
+ | 1 | 1장 처리 흐름 | M-1・M-3 | B 아즈키
+ | 2 | 2장 MVP 인증・CRUD (2-6 = 기준 문서 반영) | M-4・M-1・M-8 | A 아즈키 / E 혁준
+ | 3 | 3-0 39 테이블 분류 | 전부 | A 아즈키
+ | 4 | 5장 검증 코드・틀 | M-1・M-2 | C 승혁
+ | 5 | 6장 API 전체 사양(폴더 000・001・002・005) | M-1〜M-6 | A2 아즈키 / D 승혁 / E 혁준
+ | 6 | 7장 MCP 도구 | M-7 | D5 아즈키
+#### 담당(A・B 아즈키 / C・D 승혁 / E 혁준)
+ | 묶음 | 내용 | 담당
+ | A | DB(A1)・API 목록(A2)・State(A3) | 아즈키
+ | B | 그래프 노드・지시 넘기기(B6) | 아즈키
+ | C | 하네스: LLM 경로・출력 형식・위반 이력・틀 검사・가짜 LLM・측정 | 승혁
+ | D | 서버: Aegra・compose・입구 API・잠금・LINE 스텁・타이머 (D5 MCP는 아즈키) | 승혁
+ | E | 화면: 편성 시작・승인・편집・답장 버튼・로그인 | 혁준
+ | F | 피드백 체크리스트・결정 기록 | 승혁
+## [id=s2] 1. 처리 흐름 (관리자 쪽 그래프)데모에 필요 M-1・M-3
+### 1-0. 그래프 앞: 관리자 계정(등록・교대・로그인) 2장으로 대체데모에 필요 M-4
+11/04 결정을 반영했다. 이 흐름은 그래프 밖에서 일어나며, 그래프의 상태와 노드는 바뀌지 않는다. 관리자는 1점포에 활성 1명이다.
+운영 스크립트: 점포 + 최초 관리자 등록→로그인(이메일・비밀번호 → JWT)→[교대 시] 현 관리자가 초대 코드 발급→새 사람이 코드+이메일+비밀번호로 등록→이전 계정은 무효(삭제하지 않음)→그래프 시작 이후는 1-1
+ | 단계 | 누가 | 하는 일 | DB
+ | A. 최초 1명 | 운영(스크립트) | 관리자가 아직 없으므로 점포와 관리자를 한꺼번에 등록한다 | stores manager_accounts
+ | B-1 | 현 관리자 | 로그인한 상태에서 「초대 코드 발급」을 누른다. 이 발급이 이전 관리자의 본인 확인을 겸한다 | —
+ | B-2 | 시스템 | 점포에 묶인 1회용 코드를 만든다(유효기간 1일). DB에는 해시만 저장한다 | invite_codes
+ | B-3 | 현 관리자 | 새 사람에게 코드를 전한다(화면에 표시하는 안) | —
+ | B-4 | 새 사람 | 등록 화면에서 코드+이메일+비밀번호를 입력한다 | —
+ | B-5 | 시스템 | 코드가 유효한지 확인한다(존재・기한 내・미사용・점포 일치) | invite_codes
+ | B-6 | 시스템 | 한 트랜잭션으로 이전 활성 계정을 무효 → 새 계정을 점포에 연결 → 코드를 사용 완료로 한다 | manager_accounts invite_codes
+ | C. 로그인 | 관리자 | 이메일・비밀번호로 인증하고 JWT를 발급한다 | manager_accounts
+ | D. 승인계 조작 | 관리자 | 승인 / 재편성 요청 / 편집 저장은 토큰을 확인한 뒤 접수한다 | shift_approvals
+ | E. 개발 중 | 개발자 | 로그인을 건너뛰는 설정을 따로 둔다. 시연의 메인 흐름에는 넣지 않는다 | —
+- 그래프와의 접점: 「지금 시작」・승인・재편성 요청・편집 저장은 JWT 확인 후에만 접수한다. 승인 노드(manager_review)는 JWT의 관리자 ID를 shift_approvals.approved_by에 남기므로, 교대 후에도 누가 승인했는지 알 수 있다.
+- 1점포 1명의 지키는 방법: 이전 계정을 지우지 않고 무효로 하므로, 「활성인 관리자는 점포당 1명」으로 DB에서 막는다(부분 유일 인덱스). 마지막 1명을 무효로 만드는 조작은 허용하지 않는다(제안).
+- 무효 계정의 JWT(제안): 로그아웃이 서버 쪽 토큰 폐기를 하지 않으므로, 요청마다 is_active를 확인한다(또는 JWT 기한을 짧게).
+- 실패 시 응답(제안): 코드가 없음・기한 지남・사용 완료・점포 불일치는 같은 응답으로 돌려, 어느 경우인지 알 수 없게 한다.
+- 미결: 이전 관리자가 움직일 수 없을 때(운영이 발급하는 안), 무차별 대입 공격 대책(횟수 제한), 비밀번호 재설정, 코드를 전하는 방법(화면 표시만/알림도). 8장 참조.
+### 1-1. 편성 그래프데모에 필요 M-1
+10/16 업무 흐름 그림을 기준으로, 11/3의 확정을 반영했다. 직원은 그래프 밖에서 LINE으로 입력하고 확정 시프트를 받는다.
+시작: 마감 시각 또는 「지금 시작」→직원 정보 수집(MCP로 DB 읽기)→스킬 확인 (미확인 시 대기/진행 미정)→초안 작성(LLM, 점장 지침 우선)→검증(코드)→관리자 확인・승인→확정 저장・LINE 통지(1회)
+- 검증에서 문제가 나오면 초안 작성으로 돌아간다(회수 상한은 미정, D-e 후보: 재편성 3회 + 반려 2회 후 점장의 직접 수정).
+- 인원이 부족하면 코드가 LINE으로 후보에게 질문한다([가능][불가]). 응답 대기 동안 그래프는 멈추고 체크포인트에 저장된다.
+- 확정 후 결원은 범위 밖. 점장이 전화로 처리하고, 결과는 확정표 수정 화면에 반영하며 저장 시 검증이 돈다(잠정, D-b).
+- 그림의 「수동 편성(Excel)」은 필요 여부부터 열려 있어 이번 범위에서 뺀다.
+### 1-2. 그래프 상태와 노드 (초안, 10/16 업무 흐름도 기준 — MVP는 1-3이 우선)데모에 필요 M-1
+그래프는 관리자 쪽 1건(기간 1개)마다 1개 인스턴스가 만들어진다. 상담은 별도 그래프다(D-c). 아래는 초안이며 상자의 최종 이름은 구현하면서 정한다.
+ | 상태 항목 | 내용 | 주로 쓰는 노드
+ | shift | 대상 기간, 시작 방식(마감/지금 시작), 진행 상황, 흐름 버전 | start
+ | shift_settings | 시간대별 필요 인원・필요 업무・혼잡 승인(관리자 입력) | start
+ | staff_info | 제출된 희망, 스킬 판정(unconfirmed / needs_guidance / can_solo) | collect_staff_info
+ | skill_unconfirmed | 스킬이 미확인인 사람의 목록 | check_skills
+ | guideline_set_id | 편성 시작 시점에 고정한 점장 지침 버전 | start / manager_review
+ | draft | 현재 편성안(shift_drafts)과 revision | compose_draft
+ | review | 검증 결과(violations)와 문제 목록 | validate_draft
+ | retry_count | 편성으로 돌아간 횟수(상한은 D-e 미결) | validate / manager_review
+ | approval | 승인/반려와 지시문, 관리자가 본 draft 버전, waive 목록 | manager_review / check_approval
+ | notified | 확정 통지를 보냈는지(중복 발송 방지) | commit_notify
+ | 노드 | 하는 일 | 담당 | 대기
+ | start | 그래프 1건 시작(마감 시각 또는 「지금 시작」) | 스케줄러/코드 | -
+ | collect_staff_info | 희망과 스킬 판정을 MCP 경유로 읽어 정리 | 코드 | -
+ | check_skills | 미확인자가 있으면 관리자에게 LINE 통지. 대기할지 진행할지는 미결 | 코드+관리자 | 미결
+ | compose_draft | 점장 지침을 먼저 반영해 편성안을 작성(제출 범위 안에서). 결과는 반드시 validate를 거친다 | LLM | -
+ | validate_draft | 시간대×업무로 검증. 위반이 있으면 compose로(상한은 미결) | 코드 | -
+ | contact_candidates | 부족 시 LINE으로 후보에게 질문(다음 단계) | 코드 | 있음(interrupt)
+ | manager_review | 승인/반려+지시(JWT의 관리자 ID를 승인 기록에 남긴다) | 관리자 | 있음(interrupt)
+ | check_approval | 승인 전 최종 검사. 예외 불가 위반이 있으면 막는다 | 코드 | -
+ | commit_notify | 확정 저장, LINE 통지(1회) | 코드 | -
+LangGraph는 대기 중에는 돌지 않고 체크포인트(PostgreSQL)에 상태만 남긴다. 재개는 그래프 밖의 런타임(워커)이 같은 thread에서 Command(resume=…)로 부른다(교수 3-3). 그래프의 개수는 메인+상담의 2개로 시작한다.
+### [id=s1-3] 1-3. State 안(A3, 11/12 초안・팀 확인 전)데모에 필요 M-1
+MVP의 State는 1-3이 우선이다. 위 1-2는 10/16 초안이며 스킬 관련 항목은 MVP 밖이다. 여기는 「무엇을 가지는가」만 적는다(그래프 본체는 손으로 쓰는 과제, 10/20 교수). 상태: 초안, 아즈키 확인 대기. 근거: 시제품 prototype_01.py의 State, 기준 문서(11/07・11/08 반영), MVP 할 일(A3・B・C).
+#### 정해진 것
+- 편성안은 검사가 통과한 뒤에 DB에 저장한다(아즈키 11/09). 검사 중인 안은 State의 draft_store_shift에만 있다.
+- 자동 재편성 상한은 3회 그대로(기준 문서대로, 후보값・C6 측정으로 확인). 11/12에 한 번 「2회」로 썼다가, 점장의 재편성 요청(2회)과 헷갈린 것이라 취소했다.
+- 「남는 인원(余り)」은 재편성의 계기(위반)로 한다(아즈키 11/12). 余り = 실제 인원 − 희망 인원(want). MVP는 희망 인원만 기준으로 한다(다른 날의 평균・바쁨은 다음 단계).
+#### State 항목
+ | 항목 | 형 | 시제품과의 차이 | 누가 쓰나・메모
+ | store_id | int | 같음 | 입구 API
+ | period_id | int | 추가 | 입구 API. 1기간 = 1 thread. DB를 읽는 열쇠
+ | llm_all_staff | list | 같음 | collect. 이름 없이 ID만
+ | extra_rules | list | 추가 | collect. 점장 지시를 틀로 만든 결과(기준 문서: State의 extra_rules 1개)
+ | instruction | str | None | 추가 | approve 재개 때. 재편성 요청의 지시문(선택)
+ | draft_store_shift | list | 같음 | auto_draft. 검사가 통과할 때까지 State에만
+ | shortages / notes | list | 추가 | auto_draft. 화면 참고용. 코드 검사는 안 봄
+ | problems | list | 같음 | validate. 이번 위반(「余り」 포함)
+ | violation_history | list | 추가 | validate. 같은 위반을 묶어 횟수를 붙임(C3)
+ | auto_retry_count | int | return_count를 분할 | 자동 재편성. 상한 3(후보값・C6에서 확인)
+ | manager_request_count | int | 추가 | 점장의 재편성 요청. 상한 2(후보값)
+ | result | str | 값을 정리 | validate. 안: valid / retry / limit_reached / draft_empty
+ | decision | str | bool → 3값 | approve. approved / redraft_requested / edit_saved
+ | waived_violations | list | 추가 | approve. 점장이 허용한 위반(자격자 부족・중복 배치는 불가)
+시제품에서 뺀다: deficiency(미사용), upper_limit(상수로 충분, 추측입니다), skill_check 관련(B7에서 삭제 예정).
+#### 주의・미결
+- decision은 시제품의 bool로는 3가지 조작(승인／재편성 요청+지시／편집 저장)을 표현할 수 없다.
+- result의 problem_O는 의미를 읽을 수 없다. 이름을 다시 붙이길 권한다. draft_empty는 기준 문서의 「초안 0개의 행선지가 없다」 문제에 대응.
+- 상한을 넘어 위반을 안은 채 승인 화면으로 가는 안은, DB에 저장하는 시점(승인／확정)에 처음 위반이 기록된다(추측입니다). validation_violations를 언제 쓸지는 미결.
+- State의 모양을 나중에 바꾸면 대기 중인 재개가 깨질 수 있다(기준 문서의 기술. 미검증).
+- 검사의 「중복 배치」는 시제품의 validate에 아직 없다(기준 문서도 「넣는다」).
+- 「余り」도 위반으로 하면, 필수 위반(사원 부재・자격자 부족 등)을 고치는 횟수를 잡아먹을 우려가 있다. 미결: 余り 몇 명부터 위반으로 하나(문턱값) ／ 필수 위반이 남는 동안은 余り를 무시하나 ／ 余り를 돌릴 후보가 있을 때만 위반으로 하나(모두 제안・추측입니다).
+- 「余り」를 위반에 더하는 것은 기준 문서의 검사 규칙 표(현재는 최소 인원 경고뿐)에 아직 반영되지 않았다. 기준 문서의 규칙(먼저 기준 문서를 고친다 → 3명에게 알린다 → 코드)에 따라야 한다.
+확인 방법: 시제품의 State와 대조(prototype_01.py 103~112행). 추가 항목이 기준 문서에 근거가 있는지: extra_rules(DB 절), 두 카운터(상한 절), decision 3값(approve 절).
+## [id=s11] 2. MVP 인증・CRUD (11/07 확정)데모에 필요 M-4・M-1・M-8
+⚠ 11/09 갱신. 이 장은 팀의 기준 문서(11/08판)와 맞췄다. 다르면 기준 문서가 맞다. 반영한 내용과 아직 어긋난 곳은 2-6의 표를 본다.
+이 장이 우선합니다. 11/03~11/07에 MVP 범위로 DB를 처음부터 다시 만들었다(15 테이블, PostgreSQL 16에서 실행 확인). 인증과 설정 CRUD는 이 장의 내용이 아래 1-0장・6장의 인증/마스터 항목보다 우선한다. 구 항목(매직링크, line-registry, 마스터 API 등)은 「대체됨」으로 본다. 아직 코드로 구현・API 호출 테스트는 하지 않았다(SQL만 실행 확인).
+### 2-0. 전체 흐름(먼저 이것부터)데모에 필요 M-1
+파란 테두리=AI가 제안, 주황 테두리=사람(관리자)이 결정. AI는 제안만 하고 확정은 관리자가 합니다.
+① 점포 등록 / 관리자 교대→② 초기 설정→③ 직원 등록→④ LINE 연결→⑤ 월 설정→⑥ 직원이 희망 입력→⑦ AI가 초안 제안→⑧ 검증(코드)→⑨ 관리자가 확인・확정→⑩ 직원 연락(마지막, 제외 가능)
+ | 누가 | 무엇을 | 쓰는 테이블 | 관련 API
+ | 관리자 | ① 점포 등록 / 관리자 교대 | manager_accounts, stores, invite_codes | POST /api/auth/register (코드 발급은 운영 스크립트 / 運営スクリプト)
+ | 관리자 | ② 초기 설정: 요일×시간대의 최소 인원・자격자 필요, 업무 목록, 시간대별 업무 필요 인원 | store_time_rules, tasks, store_task_needs | /api/store/time-rules, /api/tasks, …/task-needs
+ | 관리자 | ③ 직원 등록(정직원/파트・아르바이트, 자격, 주 출근일수, 고정 요일)과 「혼자 가능」 업무 설정 | employees, employee_skills | /api/employees, /api/employees/{id}/skills
+ | 직원 | ④ 직원 전용 링크로 LINE 연결(1회) | employees.link_token → line_user_id | POST /api/employees/{id}/link-token, /api/line/link
+ | 관리자 | ⑤ 월 설정: 대상월・제출 마감・공휴일 수・희망 상한 → 직원별 제출 링크를 LINE으로 자동 발송 | shift_periods, submission_links | /api/shift-periods, …/submission-links
+ | 직원 | ⑥ 링크를 열어 희망 입력(30분 단위, 마감 전이면 몇 번이든 수정) + 업무 자기평가 | availability_submissions, evaluations | GET/PUT /api/submit/{token}, POST /api/evaluations
+ | AI(LLM) | ⑦ 위 데이터를 읽어 시프트 초안을 제안(확정하지 않음) | shift_drafts, shift_assignments | (LangGraph 내부 / MCP 経由)
+ | 코드 | ⑧ 검증(validate): 규칙 위반을 찾아 위반 셀만 AI에 돌려 재편성. 위반은 기록 | validation_violations | (LangGraph 내부)
+ | 관리자 | ⑨ 초안을 확인하고 확정(누가・언제 확정했는지 기록). 위반을 허용할 수도 있음 | shift_drafts.confirmed_by/at, validation_violations.allowed_by | (관리자 화면 / 管理者画面 — API 미설계 / 未設計)
+ | — | ⑩ 직원 연락・지침 반영 루프, 확정 알림은 마지막에 만들고 뺄 수도 있음 — 테이블 아직 없음 | (未作成 / 미작성) | —
+아래 2-1부터는 이 흐름 중 ①④⑤⑥(인증・제출)과 ②③(설정 CRUD)의 세부입니다. ⑦~⑩의 API와 ⑩의 테이블은 아직 설계 전입니다.
+### 2-1. 인증 4종류데모에 필요 M-4・M-5
+ | 누가 | 방법 | 저장 위치 | 규칙
+ | 관리자 | 이메일+비밀번호 → JWT | manager_accounts | 1계정=1점포(stores.manager_id UNIQUE). 비밀번호는 해시로 저장.
+ | 관리자 교대 | 운영자가 발급한 1회용 초대 코드(1일) | invite_codes | 새 관리자가 등록하면 구 계정은 삭제하지 않고 is_active=false.
+ | 직원(처음 LINE 연결) | 직원 전용 연결 링크 | employees.link_token | 연결되면 토큰을 비운다. line_user_id는 UNIQUE.
+ | 직원(매월 제출) | (직원, 월)별 전용 링크 | submission_links | 제출 마감까지 몇 번이든 열 수 있고 입력은 남는다(UPSERT). 마감 후에는 410.
+### 2-2. 인증 API데모에 필요 M-4・M-1
+ | API | 권한 | 규칙 | V8
+ | 
+관리자 등록(초대 코드)POST /api/auth/register | なし | 초대 코드+이메일+비밀번호로 새 관리자 등록. 한 트랜잭션: 코드 검증(미사용・미만료) → manager_accounts 생성 → stores.manager_id를 새 관리자로 교체 → 구 계정 is_active=false → 코드 used_at/used_by 기록. 코드 오류는 사유를 구분하지 않고 같은 400. | 신규
+ | 
+관리자 로그인POST /api/auth/manager/login | なし | 이메일/비밀번호 → JWT. is_active=false면 거부. 실패 응답은 이메일・비밀번호 구분 없이 같은 401. | 신규
+ | 
+로그아웃POST /api/auth/logout | 관리자 | 세션 종료(서버측 토큰 폐기는 미구현). | 신규
+ | 
+초대 코드 발급POST /api/admin/invite-codes | 관리자 | [기준 문서 11/08: 운영자가 발급] 운영자가 점포를 지정해 인수인계용 코드를 발급(1회용・유효 1일). 화면 API가 아니라 운영 스크립트로 처리한다. 이전의 「현 관리자가 발급」안은 폐기(DDL의 issued_by 삭제). | 신규
+ | 
+LINE 연결 링크 발급POST /api/employees/{id}/link-token | 관리자 | 직원 전용 LINE 연결 링크 발급(employees.link_token+만료). 링크를 열고 LINE을 연결하면 line_user_id가 저장되고 토큰은 NULL로 비운다. | 신규
+ | 
+LINE 계정 연결POST /api/line/link | 토큰 | {link_token, line_user_id}. 토큰이 유효하면 해당 직원에 line_user_id를 저장. ※ 링크에서 LINE userId를 꺼내는 방법(LIFF 필요 여부)은 미확인. | 신규
+ | 
+제출 링크 일괄 발급・발송POST /api/shift-periods/{id}/submission-links | 관리자 | 해당 월의 직원별 제출 링크를 일괄 생성(submission_links, UNIQUE(employee_id, period_id))하고 LINE으로 발송. 이미 있으면 같은 링크를 재사용. | 신규
+ | 
+제출 페이지 데이터 조회GET /api/submit/{token} | 링크 토큰 | 제출 페이지용 데이터(본인 이름・대상월・기존 제출분・상한). 몇 번 열어도 같은 데이터. submission_deadline이 지나면 410. | 신규
+ | 
+희망 제출・수정(UPSERT)PUT /api/submit/{token}/availability | 링크 토큰 | {work_date, kind:'available'|'off'|'paid_leave'|'half_leave', start_time?, end_time?}를 UPSERT(PK employee_id+work_date). available・half_leave만 시간 필수, off・paid_leave는 시간 없음. half_leave(반휴)는 그 시간 그대로 출근으로 배치한다(범위 안 자유가 아님). 정직원・파트・알바 모두 제출할 수 있다(API로 사원에 한정하지 않고 DB도 제한하지 않는다). 마감 전이라면 몇 번이든 수정 가능. 30분 단위는 화면이 제시, DB도 CHECK. 사원의 off 개수・available 개수가 shift_periods의 상한을 넘으면 422(상한 확인은 API가 센다. half_leave는 세지 않는다). 전일 paid_leave를 파트・알바에 허용할지는 미결. 【v17: 반휴 추가】 | 신규
+### 2-3. 설정・제출 CRUD API데모에 필요 M-1・M-8
+점포는 모두 JWT의 관리자에서 정하므로 요청에 store_id를 받지 않는다(다른 점포의 데이터를 건드릴 수 없게 하기 위함).
+ | API | 권한 | 규칙 | V8
+ | 
+점포 조회・수정GET/PATCH /api/store | 관리자 | 점포명 조회・수정(점포는 JWT의 관리자에 1:1). | 신규
+ | 
+시간대 규칙 목록・등록GET/POST /api/store/time-rules | 관리자 | 요일×시간대 규칙. 시간대 겹침은 DB(EXCLUDE)가 거부 → 409. | 신규
+ | 
+시간대 규칙 수정・삭제PATCH/DELETE /api/store/time-rules/{rule_id} | 관리자 | 규칙 수정・삭제. 삭제하면 store_task_needs도 CASCADE로 같이 삭제. | 신규
+ | 
+요일 규칙 복사POST /api/store/time-rules/copy | 관리자 | {from_weekday, to_weekdays[]} 요일 규칙 복사(초기 입력 부담 완화). | 신규
+ | 
+직원 목록・등록GET/POST /api/employees | 관리자 | 직원 목록・등록. 정직원/파트・아르바이트는 is_regular로 구분. weekly_days와 fixed_weekdays 불일치는 DB CHECK → 422. | 신규
+ | 
+직원 조회・수정GET/PATCH /api/employees/{id} | 관리자 | 직원 조회・수정(자격 유무, 주 출근일수, 고정 요일). 삭제 API는 없음(퇴직 플래그는 미정). | 신규
+ | 
+업무 목록・등록GET/POST /api/tasks | 관리자 | 업무(납품・보충・청소・계산대・고객/상품 응대・전화・상담・정직원 업무 등)는 관리자가 자유롭게 설정. 예시는 초기값일 뿐. | 신규
+ | 
+업무 수정・삭제PATCH/DELETE /api/tasks/{task_id} | 관리자 | 수정・삭제(employee_skills・store_task_needs는 CASCADE). | 신규
+ | 
+「혼자 가능」 업무 설정PUT /api/employees/{id}/skills | 관리자 | {task_ids[]} 관리자가 확인한 「혼자 가능」 목록을 통째로 교체. | 보류(기준 문서: 검사에 안 씀)
+ | 
+시간대별 업무 필요 인원 설정PUT /api/store/time-rules/{rule_id}/task-needs | 관리자 | {task_id, min_people}[] 시간대별 업무 필요 인원 교체. 검증의 업무 커버 체크가 이를 읽는다. | 보류(기준 문서: 검사에 안 씀)
+ | 
+업무 평가 저장(자기・타인)POST /api/evaluations | 직원 링크 | {employee_id, task_id, rating:'solo'|'guided', evaluator_id}. 자기평가(evaluator=본인, work_date 없음)와 타인평가(work_date 있음)를 같은 표에 저장. 같은 조합은 UNIQUE로 1건(수정은 UPSERT). | 보류(기준 문서: 검사에 안 씀)
+ | 
+기간 목록・등록(MVP)GET/POST /api/shift-periods | 관리자 | 월별 기간 설정: 대상월(1일), 제출 마감, 지정 공휴일 수, 휴무 희망 상한(NULL=무제한), 출근 희망 상한(반휴는 상한에 세지 않는다). UNIQUE(store, month). | 신규
+ | 
+기간 수정(MVP)PATCH /api/shift-periods/{id} | 관리자 | 마감일・상한 수정. 마감일을 바꾸면 제출 링크의 유효기간도 같이 바뀐다(링크 자체에는 별도 만료가 없음). | 신규
+### 2-4. DDL (MVP 15 테이블, v17, 실행 확인 완료 — MVP의 유일한 정의)데모에 필요 M-1・M-4・M-8
+이 DDL이 MVP의 유일한 정의다(정수 ID, schema_mvp_v17.sql과 같은 내용). 4장의 V8 완전판에서는 같은 이름 10개를 뺐다.
+-- CoverShift MVP schema v17 (2026-11-12) 基準文書(11/08版)を反映＋希望テーブル＋closing_ok＋半休(half_leave)  / 기준 문서(11/08판) 반영 + 희망 테이블 + closing_ok + 반휴(half_leave)
+-- 1) 管理者アカウント
+-- 1) 관리자 계정
+-- [印] 데모에 필요 M-4  / デモに要る M-4
+CREATE TABLE manager_accounts (
+    manager_id     BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    email          TEXT NOT NULL UNIQUE,
+    password_hash  TEXT NOT NULL,
+    is_active      BOOLEAN NOT NULL DEFAULT true      -- 店長交代で古いアカウントは false にする（消さない）  / 점장이 바뀌면 옛 계정은 false로 한다(지우지 않는다)
+);
+-- 2) 店舗（1アカウント = 1店舗）
+-- 2) 점포(계정 1개 = 점포 1개)
+-- [印] 데모에 필요 M-4  / デモに要る M-4
+CREATE TABLE stores (
+    store_id    BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    manager_id  BIGINT NOT NULL UNIQUE REFERENCES manager_accounts(manager_id),
+    name        TEXT NOT NULL
+);
+-- 2-b) 招待コード（運営が発行 → 新しい管理者が登録に使う。1回だけ・1日有効。11/04 승혁 결정）
+-- 2-b) 초대 코드(운영 측이 발급 → 새 관리자가 등록에 사용. 1회만・1일 유효. 11/04 승혁 결정)
+-- [印] 데모에 필요 M-4  / デモに要る M-4
+CREATE TABLE invite_codes (
+    code        TEXT PRIMARY KEY,                                       -- ランダムな文字列（本番はハッシュ保存を推奨）  / 무작위 문자열(실서비스는 해시 저장 권장)
+    store_id    BIGINT NOT NULL REFERENCES stores(store_id),            -- どの店舗の管理者を引き継ぐか  / 어느 점포의 관리자를 이어받는지
+    expires_at  TIMESTAMPTZ NOT NULL,                                   -- 発行から1日  / 발급 후 1일
+    used_at     TIMESTAMPTZ,
+    used_by     BIGINT REFERENCES manager_accounts(manager_id),         -- 登録して新しく管理者になった人  / 등록해서 새로 관리자가 된 사람
+    CHECK ((used_at IS NULL) = (used_by IS NULL))
+);
+-- 3) 曜日×時間帯ごとの初期設定（時間帯は1日3つ程度。1時間帯 = 1行）
+-- 3) 요일×시간대별 초기 설정(시간대는 하루 3개 정도. 1시간대 = 1행)
+--    開始・終了は「その曜日の一番早い開始 / 一番遅い終了」から読み取る。
+--   시작・종료는 「그 요일의 가장 이른 시작 / 가장 늦은 종료」에서 읽는다.
+--    資格者 = 登録販売者（MVPは登販のみ）。
+--   자격자 = 등록판매자(MVP는 등판만).
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+-- [印] 데모에 필요 M-1・M-8  / デモに要る M-1・M-8
+CREATE TABLE store_time_rules (
+    rule_id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    store_id         BIGINT   NOT NULL REFERENCES stores(store_id),
+    weekday          SMALLINT NOT NULL CHECK (weekday BETWEEN 1 AND 7),   -- 1=月 ... 7=日  / 1=월 ... 7=일
+    start_time       TIME     NOT NULL,
+    end_time         TIME     NOT NULL,
+    min_headcount    SMALLINT NOT NULL CHECK (min_headcount >= 1),        -- 休憩込みの必要人数  / 휴식 포함 필요 인원
+    min_qualified    SMALLINT NOT NULL DEFAULT 0 CHECK (min_qualified >= 0),   -- 時間帯ごとの必要な資格者数（基準文書 11/07）  / 시간대별 필요한 자격자 수(기준 문서 11/07)
+    CHECK (end_time > start_time),
+    EXCLUDE USING gist (store_id WITH =, weekday WITH =,
+        tsrange(('2000-01-01'::date + start_time), ('2000-01-01'::date + end_time)) WITH &&)
+);
+-- 4) 従業員登録
+-- 4) 직원 등록
+-- [印] 데모에 필요 M-1・M-7  / デモに要る M-1・M-7
+CREATE TABLE employees (
+    employee_id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    store_id                 BIGINT  NOT NULL REFERENCES stores(store_id),
+    name                     TEXT    NOT NULL,
+    is_regular               BOOLEAN NOT NULL,                      -- true=社員, false=アルバイト等  / true=정직원, false=알바 등
+    has_qualification        BOOLEAN NOT NULL DEFAULT false,        -- 登録販売者かどうか  / 등록판매자인지
+    closing_ok       BOOLEAN NOT NULL DEFAULT false,         -- 22:30の閉店まで残ってよい人か（検証ルール「22:30まではclosing_okの人だけ」。11/12 アズキ決定）  / 22:30 폐점까지 남아도 되는 사람인가(검증 규칙 「22:30까지는 closing_ok인 사람만」. 11/12 아즈키 결정)
+    weekly_days              SMALLINT CHECK (weekly_days BETWEEN 1 AND 7),         -- 週に出る日数（曜日は問わない人向け。空欄=決まりなし）  / 주에 나오는 일수(요일은 상관없는 사람용. 빈칸=정해진 것 없음)
+    fixed_weekdays           SMALLINT[] CHECK (fixed_weekdays <@ ARRAY[1,2,3,4,5,6,7]::SMALLINT[]),  -- 毎週出る曜日が固定の人向け（例 {1,3,5}=月水金。空欄=固定なし）  / 매주 나오는 요일이 고정인 사람용(예 {1,3,5}=월수금. 빈칸=고정 없음)
+    line_user_id             TEXT UNIQUE,                           -- NULL = LINE未連携  / NULL = LINE 미연동
+    link_token               TEXT UNIQUE,                           -- 初回LINE連携リンクの合言葉（連携したら消す）  / 첫 LINE 연동 링크의 암호(연동하면 지운다)
+    link_token_expires_at    TIMESTAMPTZ,
+    CHECK ((link_token IS NULL) = (link_token_expires_at IS NULL)),
+    CHECK (fixed_weekdays IS NULL OR weekly_days IS NULL OR weekly_days = cardinality(fixed_weekdays))
+);
+-- 5) 毎月の設定（何月分か・提出期限・社員の公休日数）
+-- 5) 월별 설정(몇 월분인지・제출 기한・정직원 공휴일수)
+-- [印] 데모에 필요 M-1  / デモに要る M-1
+CREATE TABLE shift_periods (
+    period_id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    store_id             BIGINT      NOT NULL REFERENCES stores(store_id),
+    target_month         DATE        NOT NULL CHECK (EXTRACT(DAY FROM target_month) = 1),  -- 2026-12-01 = 12月分  / 2026-12-01 = 12월분
+    submission_deadline  TIMESTAMPTZ NOT NULL,                                              -- 希望の提出期限  / 희망 제출 기한
+    designated_off_days  SMALLINT    NOT NULL CHECK (designated_off_days BETWEEN 0 AND 31), -- 社員1人あたりの月の公休日数  / 정직원 1명당 월 공휴일수
+    off_request_limit    SMALLINT    CHECK (off_request_limit BETWEEN 0 AND 31),            -- 社員が出せる希望休の上限日数（空欄=制限なし）  / 정직원이 낼 수 있는 희망휴 상한 일수(빈칸=제한 없음)
+    work_request_limit   SMALLINT    CHECK (work_request_limit BETWEEN 0 AND 31),           -- 社員が出せる希望出勤日の上限日数（空欄=制限なし）  / 정직원이 낼 수 있는 희망 출근일 상한 일수(빈칸=제한 없음)
+    thread_id            TEXT        UNIQUE,                                                  -- 編成期間1つ=thread1つ（LangGraph/Aegra。11/07 승혁）  / 편성 기간 1개 = thread 1개(LangGraph/Aegra. 11/07 승혁)
+    UNIQUE (store_id, target_month)
+);
+-- 6) 毎月の提出リンク（有効期限 = その月の提出期限。期限の列は持たない）
+-- 6) 월별 제출 링크(유효 기한 = 그 달의 제출 기한. 기한 열은 두지 않는다)
+-- [印] 데모에 필요 M-1  / デモに要る M-1
+CREATE TABLE submission_links (
+    token        TEXT   PRIMARY KEY,
+    employee_id  BIGINT NOT NULL REFERENCES employees(employee_id),
+    period_id    BIGINT NOT NULL REFERENCES shift_periods(period_id),
+    UNIQUE (employee_id, period_id)      -- 1人に月1本。再発行は作り直し  / 1명에 월 1개. 재발급은 새로 만든다
+);
+-- 7) 従業員の希望（1人×1日で1行。休み = 時刻が空欄）
+-- 7) 직원의 희망(1명×1일에 1행. 휴일 = 시각이 빈칸)
+-- [印] 데모에 필요 M-1  / デモに要る M-1
+CREATE TABLE availability_submissions (
+    employee_id  BIGINT NOT NULL REFERENCES employees(employee_id),
+    work_date    DATE   NOT NULL,
+    kind         TEXT   NOT NULL CHECK (kind IN ('available','off','paid_leave','half_leave')),
+        -- available  = 出られる（時間つき）。時間の範囲内で、AIが入れる時間を決めてよい。
+        -- available  = 나올 수 있음(시간 포함). 시간 범위 안에서 AI가 넣을 시간을 정해도 된다.
+        --              アルバイト/パートの「出勤可能時間」、社員の「出勤希望日」
+        --             알바/파트의 「출근 가능 시간」, 정직원의 「출근 희망일」
+        -- off        = 希望休（社員の希望休。上限は shift_periods.off_request_limit、アプリで数える）
+        -- off        = 희망휴(정직원의 희망휴. 상한은 shift_periods.off_request_limit, 앱에서 센다)
+        -- paid_leave = 有給の申請（全日。承認された案で、シフトには載るが出勤ではない）
+        -- paid_leave = 유급 신청(전일. 승인된 안에서 시프트에는 실리지만 출근은 아니다)
+        --              ※パート・アルバイトに許すかは未決
+        --             ※파트・알바에게 허용할지는 미결
+        -- half_leave = 半休（時刻つき。その時間どおりに出勤として案へ入れる＝範囲内で自由ではない）。
+        -- half_leave = 반휴(시각 포함. 그 시간 그대로 출근으로 안에 넣는다 = 범위 안 자유가 아님).
+        --              社員・パート・アルバイトとも出せる。希望休・出勤希望の上限には数えない。給与の扱いは未決
+        --             정직원・파트・알바 모두 낼 수 있다. 희망휴・출근 희망 상한에는 세지 않는다. 급여 취급은 미결
+        -- 行なし     = 社員:希望なし（配置してよい） / アルバイト・パート:出られない
+        -- 행 없음    = 정직원: 희망 없음(배치해도 됨) / 알바・파트: 나올 수 없음
+    start_time   TIME,
+    end_time     TIME,
+    PRIMARY KEY (employee_id, work_date),                          -- 1人1日1行。同じ日の再入力は上書き(UPSERT)  / 1명 1일 1행. 같은 날 재입력은 덮어쓰기(UPSERT)
+    CHECK ((kind IN ('available','half_leave')) = (start_time IS NOT NULL AND end_time IS NOT NULL)),
+    CHECK (start_time IS NULL OR end_time > start_time),
+    CHECK (start_time IS NULL OR (EXTRACT(MINUTE FROM start_time) IN (0,30)
+                              AND EXTRACT(MINUTE FROM end_time)   IN (0,30)))
+);
+-- 8) シフト案（AIが作る案・確定した案）。1か月分の案が何度か作られる
+-- 8) 시프트 안(AI가 만드는 안・확정된 안). 한 달분의 안이 여러 번 만들어진다
+-- [印] 데모에 필요 M-1・M-3  / デモに要る M-1・M-3
+CREATE TABLE shift_drafts (
+    draft_id    BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    period_id   BIGINT NOT NULL REFERENCES shift_periods(period_id),
+    status      TEXT   NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','confirmed')),
+    parent_draft_id BIGINT REFERENCES shift_drafts(draft_id),             -- やり直しの元になった案（検証の指摘を受けて作り直した場合）  / 다시 만들기의 바탕이 된 안(검증 지적을 받아 다시 만든 경우)
+    confirmed_at  TIMESTAMPTZ,                                            -- 管理者が承認した時刻  / 관리자가 승인한 시각
+    confirmed_by  BIGINT REFERENCES manager_accounts(manager_id),         -- 承認した管理者（店長交代後も残る）  / 승인한 관리자(점장이 바뀐 뒤에도 남는다)
+    CHECK ((status = 'confirmed') = (confirmed_at IS NOT NULL)),
+    CHECK ((confirmed_at IS NULL) = (confirmed_by IS NULL)),
+    CHECK (parent_draft_id IS NULL OR parent_draft_id <> draft_id)
+);
+-- 確定できる案は、1か月につき1つだけ
+-- 확정할 수 있는 안은 한 달에 하나뿐
+CREATE UNIQUE INDEX one_confirmed_draft_per_period ON shift_drafts(period_id) WHERE status = 'confirmed';
+-- 9) 案の中身（誰が・いつ）。1人1日1行。
+-- 9) 안의 내용(누가・언제). 1명 1일 1행.
+--    kind='work' は出勤（時刻あり）、'paid_leave' は有給（シフトには載るが出勤ではない。時刻は空欄）
+--   kind='work'는 출근(시각 있음), 'paid_leave'는 유급(시프트에는 실리지만 출근은 아님. 시각은 빈칸)
+--    半休(half_leave)の日も kind='work' で時刻つきの出勤として入れる（出勤日数に1日と数える）。
+--   반휴(half_leave) 날도 kind='work'로 시각이 있는 출근으로 넣는다(출근일수에 1일로 센다).
+--    半休かどうかは availability_submissions で判定する（この表には印を持たない）
+--   반휴인지는 availability_submissions로 판정한다(이 표에는 표시를 두지 않는다)
+-- [印] 데모에 필요 M-1・M-3  / デモに要る M-1・M-3
+CREATE TABLE shift_assignments (
+    draft_id     BIGINT NOT NULL REFERENCES shift_drafts(draft_id),
+    employee_id  BIGINT NOT NULL REFERENCES employees(employee_id),
+    work_date    DATE   NOT NULL,
+    kind         TEXT   NOT NULL DEFAULT 'work' CHECK (kind IN ('work','paid_leave')),
+    start_time   TIME,
+    end_time     TIME,
+    break_start  TIME,          -- 休憩の開始（記録だけ。validateでは見ない）  / 휴식 시작(기록만. validate에서는 보지 않는다)
+    break_end    TIME,
+    PRIMARY KEY (draft_id, employee_id, work_date),
+    CHECK ((kind = 'work') = (start_time IS NOT NULL AND end_time IS NOT NULL)),
+    CHECK ((start_time IS NULL) = (end_time IS NULL)),
+    CHECK (end_time > start_time),
+    CHECK ((break_start IS NULL) = (break_end IS NULL)),
+    CHECK (break_start IS NULL OR (kind = 'work' AND break_end > break_start AND break_start >= start_time AND break_end <= end_time)),
+    CHECK (EXTRACT(MINUTE FROM start_time) IN (0,30) AND EXTRACT(MINUTE FROM end_time) IN (0,30))
+);
+-- 10) 業務の一覧（管理者が自由に設定。sort_order は「簡単な順」などの表示順）
+-- 10) 업무 목록(관리자가 자유롭게 설정. sort_order는 「쉬운 순」 등의 표시 순서)
+-- [印] 정해 두기만  / 決めておくだけ
+CREATE TABLE tasks (
+    task_id     BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    store_id    BIGINT   NOT NULL REFERENCES stores(store_id),
+    name        TEXT     NOT NULL,
+    sort_order  SMALLINT NOT NULL DEFAULT 0,
+    UNIQUE (store_id, name)
+);
+-- 11) 誰がどの業務を一人でできるか【管理者が確認して確定した結果】（行がある = できる。行がない = 数えない）
+-- 11) 누가 어느 업무를 혼자 할 수 있는가【관리자가 확인해서 확정한 결과】(행 있음 = 가능. 행 없음 = 세지 않음)
+--     validateが信頼するのはこの表だけ。評価（自己・他己）は下の evaluations に溜めて、管理者が見て確定する
+--    validate가 신뢰하는 것은 이 표뿐. 평가(자기・타인)는 아래 evaluations에 모아 두고 관리자가 보고 확정한다
+-- [印] 나중(12/4 이후). 기준 문서에 없음, 요확인  / 後回し（12/4以降）。基準文書に無い、要確認
+CREATE TABLE employee_skills (
+    employee_id  BIGINT NOT NULL REFERENCES employees(employee_id),
+    task_id      BIGINT NOT NULL REFERENCES tasks(task_id) ON DELETE CASCADE,
+    PRIMARY KEY (employee_id, task_id)
+);
+-- 12) 時間帯ごとに、その業務をできる人が最低何人必要か
+-- 12) 시간대별로 그 업무를 할 수 있는 사람이 최소 몇 명 필요한가
+-- [印] 나중(12/4 이후). 기준 문서에 없음, 요확인  / 後回し（12/4以降）。基準文書に無い、要確認
+CREATE TABLE store_task_needs (
+    rule_id     BIGINT   NOT NULL REFERENCES store_time_rules(rule_id) ON DELETE CASCADE,
+    task_id     BIGINT   NOT NULL REFERENCES tasks(task_id) ON DELETE CASCADE,
+    min_people  SMALLINT NOT NULL CHECK (min_people >= 1),
+    PRIMARY KEY (rule_id, task_id)
+);
+-- 13) 業務ごとの評価（自己評価と他己評価）
+-- 13) 업무별 평가(자기 평가와 타인 평가)
+--     自己評価: evaluator_id = employee_id（日付なし）
+--    자기 평가: evaluator_id = employee_id(날짜 없음)
+--     他己評価: 一緒に勤務した社員が付ける（work_date = 一緒に勤務した日）
+--    타인 평가: 함께 근무한 정직원이 매긴다(work_date = 함께 근무한 날)
+-- [印] 나중(12/4 이후). 기준 문서에 없음, 요확인  / 後回し（12/4以降）。基準文書に無い、要確認
+CREATE TABLE evaluations (
+    evaluation_id  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    employee_id    BIGINT NOT NULL REFERENCES employees(employee_id),             -- 評価される人  / 평가받는 사람
+    task_id        BIGINT NOT NULL REFERENCES tasks(task_id) ON DELETE CASCADE,
+    evaluator_id   BIGINT NOT NULL REFERENCES employees(employee_id),             -- 評価する人  / 평가하는 사람
+    rating         TEXT   NOT NULL CHECK (rating IN ('solo','guided')),           -- solo=一人でできる / guided=指導が必要  / solo=혼자 가능 / guided=지도 필요
+    work_date      DATE,
+    CHECK ((evaluator_id = employee_id) = (work_date IS NULL))
+);
+-- 自己評価は 人×業務 で1つ（書き直しは上書き）
+-- 자기 평가는 사람×업무로 1개(다시 쓰면 덮어쓰기)
+CREATE UNIQUE INDEX one_self_evaluation ON evaluations(employee_id, task_id) WHERE evaluator_id = employee_id;
+-- 他己評価は 同じ評価者が、同じ日に、同じ人の同じ業務を2回つけられない
+-- 타인 평가는 같은 평가자가 같은 날 같은 사람의 같은 업무를 2번 매길 수 없다
+CREATE UNIQUE INDEX one_other_evaluation ON evaluations(employee_id, task_id, evaluator_id, work_date) WHERE evaluator_id <> employee_id;
+-- 14) 検証で引っかかった内容（1件1行で溜める。次の作り直しにAIへ渡す「コメント」の元にもなる）
+-- 14) 검증에서 걸린 내용(1건 1행으로 쌓는다. 다음 재작성 때 AI에 넘기는 「코멘트」의 바탕도 된다)
+--     コメントの文章は保存せず、check_code と detail からコードで作る（同じ指摘は同じ文章になる）
+--    코멘트 문장은 저장하지 않고 check_code와 detail에서 코드로 만든다(같은 지적은 같은 문장이 된다)
+-- [印] 데모에 필요 M-1  / デモに要る M-1
+CREATE TABLE validation_violations (
+    violation_id  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    draft_id      BIGINT NOT NULL REFERENCES shift_drafts(draft_id),   -- どの案で見つかったか  / 어느 안에서 발견됐는가
+    check_code    TEXT   NOT NULL,                                      -- どのチェックか（6種類など）  / 어느 검사인가(6종류 등)
+    work_date     DATE,                                                 -- 該当する日（なければ空欄）  / 해당하는 날(없으면 빈칸)
+    employee_id   BIGINT REFERENCES employees(employee_id),             -- 該当する人（なければ空欄。名前は持たない）  / 해당하는 사람(없으면 빈칸. 이름은 갖지 않는다)
+    detail        JSONB,                                                -- チェックごとの詳しい数字（例: {"need":2,"have":1,"time":"13:00"}）  / 검사별 상세 숫자(예: {"need":2,"have":1,"time":"13:00"})
+    allowed_by    BIGINT REFERENCES manager_accounts(manager_id),       -- 例外として許可した管理者  / 예외로 허가한 관리자
+    allowed_at    TIMESTAMPTZ,
+    CHECK ((allowed_by IS NULL) = (allowed_at IS NULL))
+);
+CREATE INDEX ON validation_violations(draft_id);
+CREATE INDEX ON validation_violations(check_code, work_date);
+### 2-5. 미결・주의정해 두기만
+- 데모에 필요 M-4 최초 점포와 첫 관리자・초대 코드는 운영자가 만든다(기준 문서 11/04). 정함.
+- 정해 두기만 로그인 시도 횟수 제한, 비밀번호 재설정, 코드 전달 방법은 미정.
+- 정해 두기만 운영 단계에서는 link_token・초대 코드・제출 토큰을 해시로 저장하길 권장한다(DB가 유출돼도 링크를 못 쓰게).
+- 나중(12/4 이후) 링크에서 LINE userId를 얻는 방법은 확인하지 못했다. LIFF가 필요할 수 있다（추측입니다）.
+- 나중(12/4 이후) 타인평가를 누가 입력하는지(관리자?)는 확인 필요（추측입니다: 관리자 입력）.
+- 정해 두기만 확인 방법: 위 DDL을 PostgreSQL 16에 그대로 붙여 넣으면 오류 없이 실행된다. API는 아직 코드가 없어 FastAPI 구현 후 pytest로 확인한다.
+- 정해 두기만 전일 유급(paid_leave)을 파트・알바에 허용할지 미결(11/12 아즈키). 반휴(half_leave)는 파트・알바도 가능.
+- 정해 두기만 반휴의 급여 취급(유급인지)은 모름. 이번에는 정하지 않는다(11/12 아즈키, Q2).
+- 정해 두기만 반휴를 낸 날에 배치가 없을 때의 취급 미결(추측입니다: 위반).
+### 2-6. 기준 문서(11/08판) 반영데모에 필요 M-1
+MVP(11/20 시연)는 팀의 「기준 문서」 하나를 기준으로 만든다. 다른 기록과 다르면 기준 문서가 맞고, 바꿀 때는 기준 문서를 먼저 고친 뒤 셋(승혁・아즈키・혁준)에게 알린 다음 코드를 바꾼다. 상태: 정함=구현해도 됨 / 미정=정할 사람과 마감이 있음 / 충돌=정할 때까지 구현 보류. 이 절은 기준 문서의 내용을 옮긴 것이다(원문은 팀 문서).
+#### ① MVP 범위데모에 필요 M-1
+11/20 시연에서 보여 줄 것은 「희망 → 초안 → 검증 → 승인 → 확정 → 통지」를 실제 LLM으로 한 번 끝까지 도는 것.
+ | 구분 | 내용 | 상태
+ | 넣음 | 편성 그래프 전체 | 정함 (11/03)
+ | 넣음 | 점장 지시를 틀 규칙으로 바꾸는 단계(그래프 밖, 1회) | 정함 (11/07)
+ | 넣음 | 관리자 Web: 승인・재편성 요청・편집 모드(30분 단위) | 정함 (11/03)
+ | 넣음 | 점장 가입・로그인(초대 코드, JWT). 초대 코드는 운영자가 발급 | 정함 (11/04)
+ | 넣음 | 직원 답장 버튼 + LINE 스텁(보내지 않고 로그・화면에 찍음) | 정함 (11/04)
+ | 넣음 | 직원 연락(contact) — 맨 마지막에 붙이고 늦으면 뺌 | 정함 (11/04)
+ | 넣음 | MCP 읽기 도구 1개(직원 정보) | 정함 (11/04), 아즈키 진행 중
+ | 넣음 | 휴게: 시간대별 「휴게 포함 필요 인원」을 점장이 입력. 휴게 시각 배정은 기록만(plan_break 노드는 뺌) | 정함 (11/03, 11/07)
+ | 뺌 | 상담 에이전트・도입 해석(Excel)・점장 규칙 코드 생성 | 정함 (11/03)
+ | 뺌 | 출력의 업무(task) — tasks 테이블은 남기고 검사에는 안 씀 | 정함 (11/03)
+ | 뺌 | Redis Stream・처리기・Caddy・진짜 LINE 연결 — 도식으로만 설명 | 정함 (11/03)
+시연 방식(정함, 11/03): 승인 대기까지 미리 돌려 체크포인트에 저장하고, 발표 때 거기서 resume한다. 발표 전에 실제 LLM으로 「검증 통과 → 승인 대기」를 1회 통과시키고, 시연 PC는 절전을 끈다. 데이터는 더미를 DB에 직접 넣는다.
+#### ② 담당데모에 필요
+ | 묶음 | 내용 | 담당 | 남은 확인
+ | A | DB(A1)・API 목록(A2)・State(A3) | 아즈키 | A2・A3 아직 못 받음
+ | B | 그래프 노드・지시 넘기기(B6) | 아즈키 | —
+ | C | 하네스: LLM 경로・출력 형식・위반 이력・틀 검사・가짜 LLM・측정 | 승혁 | C5(가짜 LLM)는 혁준이 전에 고른 것과 겹침
+ | D | 서버: Aegra・compose・입구 API・잠금・LINE 스텁・타이머 | 승혁 (D5 MCP는 아즈키) | D1(Aegra 시험) 담당 미정・D6(LINE 스텁)은 혁준 선택과 겹침
+ | E | 화면: 편성 시작・승인・편집・답장 버튼・로그인(E9) | 혁준 | E9 ↔ D3: 버튼마다 JWT 확인을 누가 짤지
+ | F | 피드백 체크리스트(F4)・결정 기록(F6) | 승혁 | F 나머지 미배정
+A3・B6・D5가 아즈키 담당인 것은 11/07 아즈키 답으로 확정. 아즈키는 11/9~11/11 일본(출국 전에 끝낼 것은 ⑦ 참조).
+#### ③ 검증 규칙(validate) — 코드가 검사한다, LLM이 아님데모에 필요 M-1
+ | 규칙 | 종류 | 어기면 | 상태 | v14 DB와의 관계
+ | 영업시간(08:00~22:30) 동안 30분마다 사원 1명 이상 | 반드시 | 재편성 | 정함 (코드 있음) | is_regular 로 판정
+ | 30분마다 자격자 1명 이상(예외 불가). 자격은 참/거짓 하나, 시간대별 필요 수는 store_time_rules.min_qualified | 반드시・예외 불가 | 재편성 | 정함 (11/07 아즈키) | needs_qualified(참/거짓) → min_qualified(인원수)로 변경함
+ | 알바는 신청한 날・신청 시간 안에서만 | 반드시 | 재편성 | 정함 (코드 있음) | availability_submissions
+ | 22:30까지는 closing_ok 인 사람만 | 반드시 | 재편성 | 정함 (코드 있음) | employees.closing_ok (v16에서 추가, 11/12 아즈키 결정)
+ | 사원 출근일 = 기간 일수 − 공휴일수(유급 포함). 공휴일수 9는 가정값. 반휴(half_leave) 날은 시각이 있는 출근으로 1일 센다(11/12 아즈키) | 반드시 | 재편성 | 정함 | shift_periods.designated_off_days
+ | 반휴(half_leave) 날의 배치는 신청한 시각 그대로(정직원・파트・알바 모두) | 필수(추측입니다) | 재편성 | 제안 — 기준 문서 미반영. 현재 코드에는 없음(시제품 check_requests는 사원을 안 본다) | availability_submissions(kind=half_leave)의 시각과 shift_assignments(kind=work)가 일치. 5-1 참조
+ | 정직원 available의 시각(출근 희망일) | 경고(추측입니다. 필수/경고는 미결) | 점장에게 알림만 | 제안・요확인 — 현재 코드에는 없음 | OUTSIDE_AVAILABILITY를 사원에도 적용. 5-1 참조
+ | 같은 사람이 같은 시간에 두 번 배정되지 않음(예외 불가). 코드에 없음 → 넣어야 함. DB 제약도 넣는다(같은 편성안 안에서) | 반드시・예외 불가 | 재편성 | 정함 (11/07) | v14는 PK(편성안, 직원, 날짜)로 1인 1일 1행이라 이미 막힘. 하루에 여러 구간을 허용하면 EXCLUDE 필요
+ | 시간대별 최소 인원(휴게 포함). 점장 지시가 있는 칸은 지시의 숫자로 덮어쓰고 그 칸은 보장(어기면 재편성). 지시가 없는 칸은 설정(store_time_rules.min_headcount)의 숫자로 경고만 | 경고 | 점장에게 알림만. 이론상 못 채우는 칸은 검사에서 빼고 부족 보고로 | 정함 (코드 있음) | store_time_rules.min_headcount
+ | 남는 인원(余り): 실제 인원 − 희망 인원(want) | 위반(재편성의 계기) | 재편성 | 정함(아즈키 11/12) — 기준 문서의 규칙 표에는 아직 미반영 | v17에는 「희망 인원(want)」 열이 보이지 않는다. min_headcount와 같은 것인지 별개인지 확인 필요(추측입니다)
+점장 지시 = 틀 규칙. 틀에 맞는 지시는 코드가 검사해서 보장하고, 틀이 없는 말은 문장 그대로 프롬프트에 넣고 화면에 「참고・보장 없음」을 표시한다. MVP 틀은 3개: not_available・max_consecutive・min_headcount(11/07 승혁 확정).
+상한에 닿으면(정함): 재편성은 자동 3회・점장 요청 2회를 따로 센다. 상한을 넘으면 위반을 안고 승인 화면으로 가서 점장이 예외를 허용할 수 있다. 단 자격 없음・중복 배치는 예외 불가.
+#### ④ LLM 호출 약속(auto_draft)데모에 필요 M-1
+ | 항목 | 내용 | 상태
+ | 모델 | Anthropic API 직접 + claude-sonnet-5-5 (11/08 승혁, M8). 이전안은 Bedrock jp. Sonnet 4.6 | 정함
+ | 입력 | 기간・영업시간 + 고정 규칙 문 + 설정에서 만드는 문(자격・사원 일수・최소 인원) + 확인된 틀 규칙 + 직원 데이터(실명 없이 ID만) | 정함
+ | 출력 | assignments(staff_id・date・start・end, 30분 단위) + shortages(참고용, 코드 검사는 안 봄) + notes. JSON 스키마 고정은 C2(승혁) | 정함
+ | 못 지킬 때 | 포기 순서: 자격자 → 사원 일수 → 희망휴 → 최소 인원 → 알바 신청 → 알바 횟수 차 (아래부터 포기) | 아즈키 코드에 있음
+ | 재시도 때 넘기는 것 | 직전 위반 + 이전 이력 전부, 같은 위반끼리 묶고 회차 표시, 「위반 칸 외에는 바꾸지 마라」 | 정함 (10/26), C3(승혁)에서 변경
+ | 재시도 상한 | 자동 3회・점장 요청 2회 (C6 측정으로 확인) | 정함 (후보값)
+ | 호출 1번의 시간・토큰 한도 | 넘으면 끊고 실패 처리 | 미정
+참고(11/06 측정, 1주・가짜 데이터): 코드가 후보표를 미리 계산해 넘기고 shortages를 두면 시간・비용이 약 30% 줄었다(1회). 쓸지는 M2(승혁).
+#### ⑤ 데이터(DB) — 기준 문서의 표와 v14의 대응데모에 필요 M-1
+ | 기준 문서의 표 | v14 | 차이・메모
+ | manager_accounts | ✓ | —
+ | stores | ✓ | —
+ | invite_codes | ✓ | 운영자 발급 → issued_by 삭제(반영함). 코드는 평문(운영은 해시 권장)
+ | employees | ✓ | 실명은 name 열, LLM용 읽기 롤은 name 열을 못 봄(열 단위 GRANT), MCP도 이름 제외. closing_ok 열 추가함(v16)
+ | shift_periods | ✓ | thread_id 열 추가(반영함)
+ | submission_links | ✓ | —
+ | store_time_rules | ✓ | 요일×시간대 1행. min_qualified 로 변경(반영함)
+ | availability_submissions | ✓ | 기준 문서: 희망 데이터 모양 미정 → 제안(v15): 날짜별 1행(kind = available / off / paid_leave / half_leave). 11/12 승인(반휴 추가)
+ | shift_drafts / shift_assignments / validation_violations | ✓ | 아즈키가 보낸 후 기준 문서와 대조 필요
+ | tasks | ✓ | 남기되 검사에는 안 씀
+ | manager_actions | 없음 | 점장 조작(승인 등) + 틀 규칙 JSON. v14에 아직 없음 → 승인 두 번 방지 제약(승인 행만 draft_id 부분 UNIQUE)과 같이 설계
+ | contact_log | 없음 | 직원 연락 기록. 맨 마지막에 만들고 뺄 수 있음
+ | employee_skills / store_task_needs / evaluations | v14에 있음 | 기준 문서에는 없음. 업무는 「검사에 안 씀」이므로 MVP 밖으로 본다(요확인: 자기평가/타인평가를 MVP에 넣을지)
+DB 제약으로 넣기로 한 것(정함): ① 같은 편성안 안에서 같은 사람 중복 배치 금지 ② 같은 편성안에 「승인」이 두 번 들어가지 않게 하기. 버튼 두 번 누르기는 입구 잠금(Postgres advisory lock)으로도 막는다.
+#### ⑥ 실행 환경데모에 필요 M-1
+- 시연은 Aegra + Postgres 위에서 돈다. 그래프는 Aegra에 올리고, 체크포인트는 Aegra가 Postgres에 저장(PostgresSaver 직접 사용은 뺌, D1). Aegra 버전은 고정.
+- 입구 API 하나(D3): 관리자 Web・직원 답장 버튼의 요청을 받아 run(편성 시작)・resume(승인・재편성 요청・편집 저장・직원 답장)을 부른다.
+- 잠금(D4): 편성 기간 하나 = thread 하나(→ shift_periods.thread_id). 같은 thread에 요청이 겹치면 하나만 처리하고 나머지는 「지금 편성을 처리하고 있습니다」.
+- LINE: 스텁 함수가 보낼 내용을 로그・화면에 찍는다(D6). 무응답 2시간(D7): Aegra cron 또는 시연용 「시간 경과」 버튼 — 미정.
+- 로그인: JWT 발급, 승인・재편성 요청・편집 저장은 토큰 확인. 개발 중에는 로그인을 건너뛰는 설정. 키・비밀번호는 코드에 쓰지 않고 .env(커밋 금지) + .env.example에 이름만.
+#### ⑦ 충돌・MVP 전에 정할 것데모에 필요 M-1
+ | # | 무엇 | 전에 정한 것 | 지금 | 정할 사람 | 상태
+ | 8 | min_headcount 위치 | 매장 설정(평소 인원, 시제품은 경고) | 정함(11/12, 승혁 안 + 아즈키 동의): 설정(store_time_rules.min_headcount)=경고 / 점장 지시(틀 규칙 min_headcount)=보장(어기면 재편성) / 지시가 있는 칸은 지시의 숫자로 덮어쓴다(설정보다 적어도). 지시가 없는 칸은 설정의 숫자로 경고만. 기준 문서에 먼저 반영하고 셋에게 알린다 | 승혁・아즈키 | 정함
+아즈키 (11/9 전): ☐ 희망 테이블 정의 → 희망 데이터 모양을 하나로 ☐ A2 API 목록・A3 State 보내기(D3・E가 기다림) ☐ 나머지 테이블 정의(배정・점장 조작・편성안 등)
+승혁: ☑ M7 틀 3개 확정 ☐ M2 편성 방식 ☐ 실제 LLM으로 「검증 통과 → 승인 대기」 1회 ☑ M8 Sonnet 5.5 + Anthropic API 직접 ☐ D7 타이머
+같이: ☐ 초안 0개 처리(아즈키 안: 읽을 수 없거나 0건이면 실패 → 수동 편성 + 점장에게 메시지) + 호출 1번의 시간・토큰 한도 ☐ 버튼마다 JWT 확인을 D3에서 할지 E9에서 할지 ☐ D1(Aegra 시험) 담당
+## [id=s3] 3. 테이블 일람 (V7 27 → V8 34. 이름 기준 하나씩 = 39: MVP 15 + V8만 24)정해 두기만
+### [id=s3-0] 3-0. 39 테이블 분류(11/12, 리더 안을 열 단위로 수정. 이름마다 한 번만)
+정리(11/12): 같은 이름이 두 번 정의돼 있던 것을 하나로 합쳤다. MVP는 2장 2-4의 15개(정수 ID)가 유일한 정의이고, 4장에는 V8만의 24개(참고용)가 남아 있다. 이름 기준으로 모두 한 번씩만 나온다(15+24=39). 본문의 「34」는 옛 V8 전체의 수다.
+리더가 이름만으로 만든 분류안을 열(column)까지 보고 고쳤다. 크게 바뀐 곳: 업무(task) 계열은 기준 문서에서 「검사에 안 씀」이므로 staffing_requirements 등은 「나중」으로. 점장 지시・승인・예외 허용은 MVP에서 다른 표(manager_actions 등)에 통합되므로 「데모에 필요(통합)」으로 표시.
+ | 테이블 | 印 | MVP에서 | 이유
+ | stores | 데모에 필요 M-4 | 2장 v15가 정 | 점장 가입・로그인의 기반
+ | manager_accounts | 데모에 필요 M-4 | 2장 v15가 정 | 점장 로그인
+ | invite_codes | 데모에 필요 M-4 | 2장 v15가 정(운영 발급, issued_by 삭제) | 운영자 발급 초대 코드
+ | employees | 데모에 필요 M-1・M-7 | 2장 v15가 정 | 편성 입력 + MCP가 읽는 표(이름 열은 LLM이 못 봄)
+ | shift_periods | 데모에 필요 M-1 | 2장 v15가 정(공휴일수・thread_id 포함) | 편성 기간. period_off_rules를 열 하나로 흡수
+ | submission_links | 데모에 필요 M-1 | 2장 v15에만 있음 | 직원별 월별 희망 제출 링크(magic_link_tokens를 대체)
+ | availability_submissions | 데모에 필요 M-1 | 2장 v15가 정(kind 열) | 희망 제출. 유급・반휴・희망휴도 kind로 흡수
+ | store_time_rules | 데모에 필요 M-1・M-8 | 2장 v15에만 있음 | 요일×시간대의 최소 인원(휴게 포함)・자격자 수
+ | shift_drafts | 데모에 필요 M-1・M-3 | v15 SQL의 동명 표가 정 | 편성안(승인・재편성의 단위)
+ | shift_assignments | 데모에 필요 M-1・M-3 | v15 SQL의 동명 표가 정 | 배정(30분 단위, 휴게는 기록만)
+ | validation_violations | 데모에 필요 M-1 | v15 SQL의 동명 표가 정 | 위반 이력(재시도에 넘기는 근거)
+ | shift_approvals | 데모에 필요 M-3 | MVP는 manager_actions에 통합(기준 문서) | 승인・재편성 요청의 기록
+ | draft_waivers | 데모에 필요 M-3 | MVP는 validation_violations.allowed_by로 통합 | 점장의 예외 허용 기록
+ | guideline_sets | 데모에 필요 M-2 | MVP는 manager_actions의 JSON 열로 대체 | 점장 지시(틀 규칙)의 버전
+ | guideline_items | 데모에 필요 M-2 | MVP는 manager_actions의 JSON 열로 대체 | 틀 규칙 3개(not_available 등)를 담는 곳
+ | period_off_rules | 데모에 필요 M-1 | shift_periods.designated_off_days로 흡수 | 사원 출근일 = 기간 일수 − 공휴일수 규칙에 필요
+ | paid_leave_records | 데모에 필요 M-1 | availability_submissions.kind=paid_leave로 흡수 | 유급 포함 출근일 계산에 필요
+ | contact_rounds | 데모에 필요 M-6 | (기준 문서는 contact_log 1표) | 직원 연락. 맨 마지막, 늦으면 뺌
+ | contact_attempts | 데모에 필요 M-6 | (기준 문서는 contact_log 1표) | 직원 연락. 맨 마지막, 늦으면 뺌
+ | tasks | 정해 두기만 | — | 기준 문서: 표는 남기고 검사에는 안 씀
+ | validation_results | 정해 두기만 | MVP는 validation_violations만 | 회차별 합계. 기준 문서 16표에 없음(추측입니다: 위반 표로 충분)
+ | draft_edit_log | 정해 두기만 | — | 편집 모드(M-3)는 데모에 나오지만 이력 저장은 나중에 붙여도 됨(추측입니다)
+ | staffing_requirements | 나중(12/4 이후) | MVP는 store_time_rules | 시간대×업무 필요 인원. 업무는 검사에 안 씀 → 최소 인원은 store_time_rules로
+ | required_solo | 나중(12/4 이후) | — | 업무별 단독 인원(업무 검사에 안 씀)
+ | congestion_manual | 나중(12/4 이후) | — | 혼잡 수동 설정. 판촉일 등은 MVP 밖
+ | time_bands | 나중(12/4 이후) | MVP는 store_time_rules | 시간대 마스터. 요일×시간대 규칙으로 대체
+ | qualifications | 나중(12/4 이후) | — | 기준 문서: 자격 테이블은 만들지 않는다(자격은 참/거짓 하나)
+ | staff_skills | 나중(12/4 이후) | — | 스킬시트. 업무를 검사에 안 쓰므로 MVP 밖
+ | staff_skill_concerns | 나중(12/4 이후) | — | 스킬 불안 표시(LLM・MCP에는 안 보임)
+ | rule_feedback | 나중(12/4 이후) | — | 코드 생성 규칙의 맞음/틀림. 코드 생성은 MVP 밖
+ | onboarding_imports | 나중(12/4 이후) | — | 도입 해석(Excel)은 MVP의 「뺀」 항목
+ | historical_shifts | 나중(12/4 이후) | — | 도입 해석(Excel)과 한 세트
+ | line_contact_registry | 나중(12/4 이후) | — | 진짜 LINE 연결은 MVP 밖(MVP는 employees.line_user_id + 스텁)
+ | magic_link_tokens | 나중(12/4 이후) | submission_links로 대체됨 | 직원 희망 제출 링크. v15가 정
+ | submission_notices | 나중(12/4 이후) | — | 제출 마감 알림(LINE). 진짜 LINE이 없으므로 나중
+ | store_settings | 나중(12/4 이후) | — | 스킬 미확인 경고 등의 설정값. 스킬이 MVP 밖
+ | employee_skills | 나중(12/4 이후) | 2장 2-4(v16)에만 있음 | 「혼자 가능」 업무 확인값(기준 문서에 없음, 요확인)
+ | store_task_needs | 나중(12/4 이후) | 2장 2-4(v16)에만 있음 | 시간대별 업무 필요 인원(기준 문서에 없음, 요확인)
+ | evaluations | 나중(12/4 이후) | 2장 2-4(v16)에만 있음 | 자기・타인평가(기준 문서에 없음, 요확인)
+합계: 데모에 필요 19(그중 M-6 2개) / 정해 두기만 3 / 나중 17 = 39.
+삭제 2, 신규 9, 보류 2(V7 그대로 둔다). 신규・변경의 DDL은 4장에 있다.
+ | 테이블 | V8 | 내용
+ | employees qualifications tasks time_bands | 유지 | employees.shift_end_mode・contract_hours는 Excel용이라 보류 상태로 둔다(NULL 허용이라 영향 없음). tasks는 관리자가 등록・수정
+ | stores | 신규 | 점포. 아무것도 참조하지 않으므로 제일 먼저 만든다
+ | manager_accounts | 변경 | stores 다음에 만든다. employees 참조(staff_id)를 삭제하고 store_id・is_active・deactivated_at을 추가. 활성 관리자는 점포당 1명(부분 유일 인덱스). 승인자・수정자・기간 작성자 3곳이 이 테이블을 직접 참조
+ | invite_codes | 신규 | 관리자 초대 코드(1회용, 유효 1일, 해시만 저장). issued_by가 NULL이면 운영이 발급
+ | magic_link_tokens line_contact_registry | 유지 | V5.1 인증 그대로
+ | staffing_requirements required_solo congestion_manual | 유지 | 격자 1개로 통합하는 안(V7 8.3)은 미결 그대로
+ | availability_submissions shift_assignments | 유지 | shift_assignments에 task_id가 없으므로 「업무 단위 지침」은 배치 행만으로 판정할 수 없다(V5 결정)
+ | validation_results | 유지 | 
+ | shift_periods | 변경 | early_started_at 추가(「지금 시작」). max_revision은 D-e 보류
+ | shift_drafts | 변경 | objective_weights 삭제, created_by를 llm/manager로, guideline_set_id 추가
+ | staff_skills | 변경 | 값을 영어 코드로. 행이 없으면 unconfirmed로 본다(제안)
+ | validation_violations | 변경 | 코드 RULE_VIOLATION(틀 규칙 위반)과 guideline_item_id 추가(5장)
+ | shift_approvals | 변경 | action을 approved/rejected로, instruction 추가(5장)
+ | draft_edit_log | 변경 | reason, phase 추가(5장)
+ | contact_rounds contact_attempts | 유지 다음 단계 | 연락 루프. 한 번에 보낼지 순서대로 보낼지는 운영 선택(10/20 교수). 상태 값은 영어 코드로
+ | period_off_rules paid_leave_records | 유지 다음 단계 | 지정휴일은 비교만 하고 막지 않는다. 값은 영어 코드로
+ | onboarding_imports historical_shifts | 보류 | Excel 도입. 시작 데이터는 수동 DB 입력(10/20)
+ | staff_skill_self_drafts | 삭제 리더 승인 대기 | 자기평가 폐지
+ | objective_weight_presets | 삭제 | 솔버 폐지에 따라
+ | staff_skill_concerns | 신규 제안 | 본인의 「불안」 표시
+ | guideline_sets guideline_items | 신규 | 점장 지침의 버전과 항목(D-h・D-i)
+ | rule_feedback | 신규 | 시험 중 규칙에 대한 「맞음/틀림」(D-h)
+ | draft_waivers | 신규 | 예외 허용의 영속 기록(V7 8.5 #27)
+ | submission_notices | 신규 제안 | 마감 전 LINE 1회 / 마감 시 미응답자를 「불가」로 취급한 기록
+ | store_settings | 신규 제안 | 미확인 경고 일수(기본 7)・리마인드 간격(기본 24시간)
+## [id=s4] 4. DB 스키마 (V8 완전판 중 2장과 안 겹치는 24 테이블, 참고용)정해 두기만
+V7의 DDL에 V8 변경을 적용한 전체다. PostgreSQL 16에서 처음부터 끝까지 실행해 오류 없이 34개 테이블이 만들어지는 것을 확인했고, 잘못된 값(한국어 구 코드, 이유 없는 확정 후 수정, 지시 없는 반려 등)이 거부되는 것도 확인했다. 실행 순서는 파일 순서 그대로다. btree_gist 확장이 필요하다. 변경점은 ** V8 ** 주석으로 표시했다.
+### 4-1. 저장값 코드표정해 두기만
+ | 항목 | V7 (한국어 값) | V8 (코드)
+ | employees.employment_type | 정직원 / 파트타이머 / 아르바이트 | regular / part_timer / arbeit
+ | employees.shift_end_mode | 계약시간까지 / 폐점까지 | until_contract_hours / until_closing
+ | staff_skills.status | 미확인 / 지도필요 / 단독대응가능 | unconfirmed / needs_guidance / can_solo
+ | shift_assignments.source | 희망반영 / agent제안 / 관리자수정 | wish_applied / llm_proposed / manager_edit
+ | shift_drafts.created_by | agent / manager | llm / manager
+ | shift_approvals.action | 승인 / 재조정요청 | approved / rejected (+ instruction)
+ | contact_rounds.status | 진행중 / 확정 / 상한초과_관리자대기 / 취소 | in_progress / confirmed / limit_reached_waiting_manager / cancelled
+ | contact_attempts.status | 대기 / 발송됨 / 가능 / 불가능 / 불확실 / 타임아웃 / 수동넘김 / 취소 | pending / sent / available / unavailable / uncertain / timed_out / manually_skipped / cancelled
+ | onboarding_imports.status | 업로드됨 / 해석중 / AI제안완료 / AI실패_수동지정 / 점장확인완료 / 반영완료 / 폐기 | uploaded / interpreting / ai_proposed / ai_failed_manual / manager_confirmed / applied / discarded
+ | period_off_rules.applies_to | 정직원만 / 전원 / 미확인 | regular_only / all / unconfirmed
+### 4-2. 전체 DDL정해 두기만
+-- ★ 다음 10개 테이블은 2장 2-4의 v15/v16이 유일한 정의라서 여기서는 뺐다:
+--   stores, manager_accounts, invite_codes, employees, tasks, shift_periods,
+--   availability_submissions, shift_drafts, shift_assignments, validation_violations
+-- ★ 이 DDL은 V8 완전판의 나머지(참고용)다. 아래 FK는 빠진 테이블(UUID)을 가리키므로 단독으로는 실행되지 않는다.
+-- Extension 설치 (시간대 중복 방지 제약용)
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+-- -----------------------------------------------------
+-- 1. 마스터 데이터 (Master Data)
+-- -----------------------------------------------------
+-- 자격증 마스터
+-- [印] 나중(12/4 이후)
+CREATE TABLE qualifications (
+    qualification_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name              TEXT NOT NULL UNIQUE   -- 예: 약사면허
+);
+-- 시간대 마스터 (v6 개정: congestion_weight 삭제 및 DB 레벨 중복 방지 제약 반영)
+-- [印] 나중(12/4 이후)
+CREATE TABLE time_bands (
+    band_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name        TEXT NOT NULL,         -- 예: 개점~점심
+    start_time  TIME NOT NULL,
+    end_time    TIME NOT NULL,
+    sort_order  INT NOT NULL,
+    time_range  tsrange GENERATED ALWAYS AS (
+        tsrange('2000-01-01'::date + start_time, '2000-01-01'::date + end_time)
+    ) STORED,
+    -- ** V5 신규 ** 길이 0 또는 역전된 시간대 방지 / 표시 순서 중복 방지
+    CONSTRAINT band_start_before_end CHECK (end_time > start_time),
+    CONSTRAINT band_sort_unique UNIQUE (sort_order)
+);
+ALTER TABLE time_bands
+    ADD CONSTRAINT no_overlapping_bands EXCLUDE USING gist (time_range WITH &&);
+-- -----------------------------------------------------
+-- 2. 계정 / 인증 (매직링크 & 관리자 로그인)   ** V5.1 변경 **
+-- -----------------------------------------------------
+-- ** V5.1 ** V5의 accounts(LINE Login 겸용)와 invite_tokens는 삭제했다.
+--   - 아르바이트의 PWA 접근: 매직링크 (magic_link_tokens. shift_periods를 참조하므로 아래 shift_periods 뒤에 정의)
+--   - 관리자(Web) 로그인: manager_accounts (이메일/비밀번호)
+-- LINE 연동 계정 매칭 테이블 (Webhook/수동 매칭용)
+-- [印] 나중(12/4 이후)
+CREATE TABLE line_contact_registry (
+    line_user_id   TEXT PRIMARY KEY,          -- LINE Webhook userId
+    first_seen_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    staff_id       UUID REFERENCES employees(staff_id),   -- NULL = 미매칭
+    matched_by     UUID REFERENCES employees(staff_id),
+    matched_at     TIMESTAMPTZ
+);
+-- -----------------------------------------------------
+-- 3. 배치 기준 및 관리자 수동 설정
+-- -----------------------------------------------------
+-- 시간대별 업무 필요 인원
+-- [印] 나중(12/4 이후)
+CREATE TABLE staffing_requirements (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    band_id        UUID NOT NULL REFERENCES time_bands(band_id),
+    task_id        UUID NOT NULL REFERENCES tasks(task_id),
+    required_count INT NOT NULL DEFAULT 1 CHECK (required_count >= 0),  -- ** V5: 음수 방지 **
+    verified_by    UUID REFERENCES employees(staff_id),
+    verified_date  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(band_id, task_id)
+);
+-- 핵심 판정 근거 (band × task 단독 대응 인원)
+-- [印] 나중(12/4 이후)
+CREATE TABLE required_solo (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    band_id        UUID NOT NULL REFERENCES time_bands(band_id),
+    task_id        UUID NOT NULL REFERENCES tasks(task_id),
+    required_count INT NOT NULL DEFAULT 1 CHECK (required_count >= 0),  -- ** V5: 음수 방지 **
+    verified_by    UUID REFERENCES employees(staff_id),
+    verified_date  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(band_id, task_id)
+);
+-- 관리자 수동 혼잡도 승인 (v5/v6 개정: 계산식 폐지 후 수동 입력 전환)
+-- [印] 나중(12/4 이후)
+CREATE TABLE congestion_manual (
+    id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    date               DATE NOT NULL,
+    band_id            UUID NOT NULL REFERENCES time_bands(band_id),
+    task_id            UUID NOT NULL REFERENCES tasks(task_id),   -- ** V5 신규 **
+    is_manual_override BOOLEAN NOT NULL DEFAULT TRUE,  -- 관리자 특일 승인 여부 (+1 필요 인원 적용)
+    -- ** V5 확정: 승인 단위 = 날짜 × 시간대(band) × 업무(task).
+    --    band는 평시 구조이고, 판촉이 어느 band의 어느 업무에 얹히는지가 판촉마다 다르기 때문.
+    --    +1은 해당 (날짜, band, task)의 required_solo에만 적용된다.
+    --    (requires_solo=false 업무에 대한 행은 의미가 없으므로 서비스 레이어에서 거부한다) **
+    note               TEXT,
+    verified_by        UUID REFERENCES employees(staff_id),
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(date, band_id, task_id)
+);
+-- ** V5.1 신규 ** 매직링크 토큰 (아르바이트의 PWA 접근용)
+-- shift_periods를 참조하므로 shift_periods 뒤에 둔다 (FK 순서).
+-- expires_at : 발급 시 shift_periods.submission_deadline과 같은 값을 넣는다 (서비스 레이어 규칙. 마감 = 링크 실효)
+-- used_at    : 최초 접근 시각 기록용(참고값). 유효기간 내에는 재사용할 수 있으므로 실효 판정에는 쓰지 않는다
+-- 발급 조건(line_contact_registry 매칭이 끝난 직원만)은 서비스 레이어에서 강제한다
+-- [印] 나중(12/4 이후)
+CREATE TABLE magic_link_tokens (
+    token       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    staff_id    UUID NOT NULL REFERENCES employees(staff_id),
+    purpose     TEXT NOT NULL,                 -- 예: 'shift_submission'
+    period_id   UUID REFERENCES shift_periods(period_id),
+    issued_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at  TIMESTAMPTZ NOT NULL,
+    used_at     TIMESTAMPTZ,
+    CONSTRAINT magic_link_expiry_after_issue CHECK (expires_at > issued_at)
+);
+-- -----------------------------------------------------
+-- 4. 스킬시트 & 희망 시프트
+-- -----------------------------------------------------
+-- 스킬시트 확정 판정값
+-- [印] 나중(12/4 이후)
+CREATE TABLE staff_skills (
+    staff_id      UUID NOT NULL REFERENCES employees(staff_id),
+    task_id       UUID NOT NULL REFERENCES tasks(task_id),
+    status        TEXT NOT NULL CHECK (status IN ('unconfirmed', 'needs_guidance', 'can_solo')),
+    verified_by   UUID REFERENCES employees(staff_id),
+    verified_date TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (staff_id, task_id)
+);
+-- -----------------------------------------------------
+-- 4-2. ** V8 신규 ** 점장 지침 (D-h, D-i) / 스킬 불안 표시
+-- -----------------------------------------------------
+-- 본인의 「불안」 표시. 판정(staff_skills)과 별개이며 LLM・MCP에는 노출하지 않는다. 관리자 화면에 코드가 집계해 보여준다.
+-- [印] 나중(12/4 이후)
+CREATE TABLE staff_skill_concerns (
+    staff_id   UUID NOT NULL REFERENCES employees(staff_id),
+    task_id    UUID NOT NULL REFERENCES tasks(task_id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (staff_id, task_id)
+);
+-- 점장 지침의 버전. 지침을 저장할 때마다 새 버전이 생기고, 편성(shift_drafts.guideline_set_id)은 시작 시점의 버전을 가리킨다.
+-- [印] 데모에 필요 M-2  → MVP는 manager_actions의 JSON 열로 대체
+CREATE TABLE guideline_sets (
+    set_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    version_no INT  NOT NULL UNIQUE CHECK (version_no >= 1),
+    created_by UUID NOT NULL REFERENCES manager_accounts(manager_id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- 지침 항목. kind: template_rule = 틀+값 / generated_rule = LLM이 만든 검사 코드(격리 실행, 시험 중에는 경고만) / directive_only = 틀도 코드도 못 되는 말(검사 보장 없음)
+-- [印] 데모에 필요 M-2  → MVP는 manager_actions의 JSON 열로 대체
+CREATE TABLE guideline_items (
+    item_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    set_id         UUID NOT NULL REFERENCES guideline_sets(set_id) ON DELETE CASCADE,
+    source_text    TEXT NOT NULL,                 -- 점장이 한 말 그대로
+    kind           TEXT NOT NULL CHECK (kind IN ('template_rule','generated_rule','directive_only')),
+    template_key   TEXT,                          -- 예: max_consecutive (정식 이름은 미결, PART 8)
+    params         JSONB,                         -- 틀에 채운 값. 예: {"shift":"late","limit":1}
+    generated_code TEXT,                          -- generated_rule 전용. 격리 실행 위치는 미결
+    status         TEXT NOT NULL DEFAULT 'trial' CHECK (status IN ('trial','confirmed','stopped')),
+    CONSTRAINT tmpl_needs_key CHECK (kind <> 'template_rule' OR (template_key IS NOT NULL AND params IS NOT NULL)),
+    CONSTRAINT gen_needs_code CHECK (kind <> 'generated_rule' OR generated_code IS NOT NULL),
+    CONSTRAINT directive_has_no_rule CHECK (kind <> 'directive_only' OR (template_key IS NULL AND generated_code IS NULL))
+);
+-- 시험 중 규칙에 대한 점장의 「맞음/틀림」 피드백
+-- [印] 나중(12/4 이후)
+CREATE TABLE rule_feedback (
+    feedback_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    item_id     UUID NOT NULL REFERENCES guideline_items(item_id) ON DELETE CASCADE,
+    draft_id    UUID NOT NULL,   -- shift_drafts 뒤에서 FK를 추가한다
+    verdict     TEXT NOT NULL CHECK (verdict IN ('correct','wrong')),
+    given_by    UUID NOT NULL REFERENCES manager_accounts(manager_id),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (item_id, draft_id)
+);
+-- -----------------------------------------------------
+-- 5. 시프트 Draft & 검증
+-- -----------------------------------------------------
+-- [印] 정해 두기만
+CREATE TABLE validation_results (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    draft_id        UUID NOT NULL REFERENCES shift_drafts(draft_id),
+    revision        INT NOT NULL,
+    ok              BOOLEAN NOT NULL,
+    violation_count INT NOT NULL DEFAULT 0,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- [印] 데모에 필요 M-3  → MVP는 manager_actions에 통합(기준 문서)
+CREATE TABLE shift_approvals (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    draft_id     UUID NOT NULL REFERENCES shift_drafts(draft_id),
+    approved_by  UUID NOT NULL REFERENCES manager_accounts(manager_id),
+    action       TEXT NOT NULL CHECK (action IN ('approved', 'rejected')),   -- ** V8 ** 반려는 관리자의 판단. 「지시 반영」을 별도 값으로 둘지는 미결
+    instruction  TEXT,                                                       -- ** V8 ** 반려할 때의 지시문
+    approved_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT reject_needs_instruction_or_reason CHECK (action <> 'rejected' OR instruction IS NOT NULL)
+);
+-- -----------------------------------------------------
+-- 6. §20 조율 루프 (Contact Round & Attempts)
+-- -----------------------------------------------------
+-- 조율 루프 라운드 (부족 상황별 순차 연락 관리)
+-- [印] 데모에 필요 M-6
+CREATE TABLE contact_rounds (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    draft_id       UUID NOT NULL REFERENCES shift_drafts(draft_id),
+    violation_key  TEXT NOT NULL,     -- validation_violations.violation_key와 매핑
+    max_contacts   INT NOT NULL DEFAULT 3,   -- 관리자 설정 최대 순차 연락 인원 (기본값 3)
+    status         TEXT NOT NULL CHECK (status IN ('in_progress', 'confirmed', 'limit_reached_waiting_manager', 'cancelled')) DEFAULT 'in_progress',
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- 개별 직원 연락 시도 및 Quick Reply 상태 관리
+-- ** V4 변경: timeout_at은 서비스 레이어에서 sent_at + 2시간(고정)으로 계산해 저장한다 **
+-- [印] 데모에 필요 M-6
+CREATE TABLE contact_attempts (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    contact_round_id UUID NOT NULL REFERENCES contact_rounds(id) ON DELETE CASCADE,
+    staff_id         UUID NOT NULL REFERENCES employees(staff_id),
+    contact_order    INT NOT NULL,     -- 연락 우선순위 (1, 2, 3...)
+    status           TEXT NOT NULL CHECK (status IN (
+        'pending', 'sent', 'available', 'unavailable', 'uncertain', 'timed_out', 'manually_skipped', 'cancelled'   -- ** V6 신규(제안) ** 'manually_skipped' = 점장이 「다음 사람에게」를 눌러 넘김
+    )) DEFAULT 'pending',
+    sent_at          TIMESTAMPTZ,
+    responded_at     TIMESTAMPTZ,
+    response_raw     TEXT,             -- LINE 원본 응답 텍스트 (참고용)
+    timeout_at       TIMESTAMPTZ,      -- sent_at + 2시간 (고정값, V4 결정)
+    -- ** V5 신규 ** 같은 순위·같은 사람의 이중 등록 방지
+    CONSTRAINT attempt_order_unique  UNIQUE (contact_round_id, contact_order),
+    CONSTRAINT attempt_person_unique UNIQUE (contact_round_id, staff_id)
+);
+-- -----------------------------------------------------
+-- 7. ** V6 신규(제안) ** 목적함수 프리셋 / 점장 직접 수정 이력 / 도입 시 시프트표 해석 / 지정휴일・유급 관리
+-- -----------------------------------------------------
+-- ** V6 신규 ** 점장의 직접 수정 이력 (④ 폐지 → 마감 후 변경은 점장이 화면에서 직접 고친다)
+-- 「누가・언제・무엇을」을 남긴다. 전화로만 처리하고 기록이 남지 않는 위험(H-17급 구조적 한계)의 완화책.
+-- ※ PART 8.2 #1(수정 1회 = 새 draft 행 + parent_draft_id)이 채택되면 이 테이블은 그 방식으로 대체할 수 있다.
+-- [印] 정해 두기만
+CREATE TABLE draft_edit_log (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    draft_id      UUID NOT NULL REFERENCES shift_drafts(draft_id),
+    staff_id      UUID NOT NULL REFERENCES employees(staff_id),   -- 수정 대상 직원
+    date          DATE NOT NULL,
+    before_start  TIME,      -- 수정 전 (NULL = 배정 없음/휴무)
+    before_end    TIME,
+    after_start   TIME,      -- 수정 후 (NULL = 배정 삭제/휴무)
+    after_end     TIME,
+    edited_by     UUID NOT NULL REFERENCES manager_accounts(manager_id),   -- 수정한 관리자
+    edited_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    phase         TEXT NOT NULL DEFAULT 'before_approval' CHECK (phase IN ('before_approval','after_approval')),   -- ** V8 **
+    reason        TEXT,   -- ** V8 ** 확정 후 수정(after_approval)은 이유 필수
+    CONSTRAINT edit_reason_after_approval CHECK (phase = 'before_approval' OR (reason IS NOT NULL AND length(btrim(reason)) > 0)),
+    CONSTRAINT edit_before_pair CHECK ((before_start IS NULL) = (before_end IS NULL)),
+    CONSTRAINT edit_after_pair  CHECK ((after_start  IS NULL) = (after_end  IS NULL))
+);
+-- ** V6 신규 ** 도입 시 시프트표 해석 (Excel 한정, 도입 시 1회). AI는 「해석」만, 「옮겨 담기」는 코드.
+-- 이름 등 원문은 우리 서버(이 DB) 안에만 둔다. AI API에는 가려진 표(같은 글자 → 같은 기호 TEXT_n)만 보낸다.
+-- raw_grid / token_map은 반영 완료・폐기 시 즉시 삭제하며(CHECK로 강제), 미완료 상태의 만료분은 스케줄러가 삭제한다.
+-- [印] 나중(12/4 이후)
+CREATE TABLE onboarding_imports (
+    import_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    uploaded_by   UUID NOT NULL REFERENCES manager_accounts(manager_id),
+    file_name     TEXT NOT NULL,
+    status        TEXT NOT NULL CHECK (status IN (
+        'uploaded', 'interpreting', 'ai_proposed', 'ai_failed_manual', 'manager_confirmed', 'applied', 'discarded'
+    )) DEFAULT 'uploaded',
+    raw_grid      JSONB,     -- 업로드한 표의 원문(이름 포함). 삭제 후 NULL. AI에는 절대 전달하지 않는다
+    token_map     JSONB,     -- 치환 대응표(TEXT_n → 원문). 서버에만 보관. 삭제 후 NULL
+    manager_legend JSONB,    -- ** V6 2차 신규 ** 범례(기호→시간). 표 하단의 범례 칸에서 코드가 뽑거나 점장이 입력한다. 「기호:시각〜시각」 형태의 행만 통과시켜 그대로 전달한다(이름이 들어갈 자리가 없는 형태, V17 §23). 범례가 없는 월(원본의 7월 등)은 점장 입력
+    ai_proposal   JSONB,     -- AI 제안: ①표 구조 ②기호→시간 ③시간대 구분 ④확인이 필요한 칸 ⑤색・표시의 의미 후보. 근거가 없는 값은 「불명」 (기호는 치환 토큰 기준)
+    confirmed     JSONB,     -- 점장이 확인・수정한 해석(기호→시간, 시간대, 색・표시의 의미 = 점포별 대응표). 코드는 이것만 신뢰한다
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    confirmed_at  TIMESTAMPTZ,
+    applied_at    TIMESTAMPTZ,
+    purged_at     TIMESTAMPTZ,   -- raw_grid / token_map 삭제 시각
+    CONSTRAINT import_purged_when_done CHECK (
+        status NOT IN ('applied', 'discarded') OR (raw_grid IS NULL AND token_map IS NULL)
+    )
+);
+-- ** V6 신규 ** 도입 시 읽어 들인 과거 시프트 실적.
+-- 필요 인원의 「자동 제안」(코드의 집계, AI가 아님 — V16 p.6)에 쓴다.
+-- 「확정된 draft」를 가리키는 표시가 없는 문제(PART 8.1 #6)를, 도입 데이터에 한해 이 테이블이 우회한다.
+-- ※ V6 2차: end_time이 NOT NULL이므로, 끝 시각이 정해지지 않은 행(시작 시각만 있는 기호 + employees.shift_end_mode가 NULL)은 점장이 끝나는 방식을 확인하기 전까지 저장하지 않는다.
+-- [印] 나중(12/4 이후)
+CREATE TABLE historical_shifts (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    import_id   UUID NOT NULL REFERENCES onboarding_imports(import_id),
+    staff_id    UUID NOT NULL REFERENCES employees(staff_id),
+    date        DATE NOT NULL,
+    start_time  TIME NOT NULL,
+    end_time    TIME NOT NULL,
+    raw_symbol  TEXT,        -- 표에 적혀 있던 근무 기호(예: 早)
+    CONSTRAINT hist_start_before_end CHECK (end_time > start_time)
+);
+-- ** V6 2차 신규(제안) ** 지정휴일 수의 월초 설정. 달마다 다르다(원본 시트에서 9~11일).
+-- 점장이 기간을 만들 때 「이번 달 지정휴일 ○일」을 등록한다. 직원별 휴일 수의 집계는 코드가 한다(AI 아님).
+-- ※ 법정 휴일 수가 아니라 「매장이 정한 지정휴일 수」로 한정한다. 노무 규제 판정은 보류 항목이다(V16 §15).
+-- [印] 데모에 필요 M-1  → shift_periods.designated_off_days로 흡수
+CREATE TABLE period_off_rules (
+    period_id           UUID PRIMARY KEY REFERENCES shift_periods(period_id),
+    designated_off_days SMALLINT NOT NULL CHECK (designated_off_days BETWEEN 0 AND 31),
+    applies_to          TEXT NOT NULL DEFAULT 'unconfirmed' CHECK (applies_to IN ('regular_only', 'all', 'unconfirmed')),  -- 누구에게 적용되는지 미확인(PART 8.5 #14)
+    set_by              UUID REFERENCES manager_accounts(manager_id),
+    set_at              TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- ** V6 2차 신규(제안) ** 유급 사용 기록. 「희망 휴일」은 기존 availability_submissions(start_time IS NULL)로 구분하고,
+-- 「희망이 통과된 휴일」= 휴무 희망을 낸 날 중 최종 배치가 없는 날로 코드가 계산한다.
+-- [印] 데모에 필요 M-1  → availability_submissions.kind=paid_leave로 흡수
+CREATE TABLE paid_leave_records (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    staff_id    UUID NOT NULL REFERENCES employees(staff_id),
+    period_id   UUID NOT NULL REFERENCES shift_periods(period_id),
+    date        DATE NOT NULL,
+    recorded_by UUID REFERENCES manager_accounts(manager_id),
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (staff_id, date)
+);
+-- -----------------------------------------------------
+-- 8. ** V8 신규 ** 예외 허용 기록 / 제출 알림 / 매장 설정
+-- -----------------------------------------------------
+ALTER TABLE rule_feedback ADD CONSTRAINT rule_feedback_draft_fk FOREIGN KEY (draft_id) REFERENCES shift_drafts(draft_id);
+-- 예외 허용(waive)의 영속 기록. 초안이 바뀌면(수정・옵션 반영) 해당 draft의 허용을 삭제하고 다시 받는다.
+-- [印] 데모에 필요 M-3  → MVP는 validation_violations.allowed_by로 통합
+CREATE TABLE draft_waivers (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    draft_id      UUID NOT NULL REFERENCES shift_drafts(draft_id) ON DELETE CASCADE,
+    violation_key TEXT NOT NULL,
+    reason        TEXT NOT NULL CHECK (length(btrim(reason)) > 0),
+    waived_by     UUID NOT NULL REFERENCES manager_accounts(manager_id),
+    waived_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (draft_id, violation_key)
+);
+-- 제출 알림 기록. pre_deadline_reminder = 마감 전 LINE 1회 / deadline_treated_unavailable = 마감 시 미응답자를 「불가」로 취급(관리자에게 통지)
+-- [印] 나중(12/4 이후)
+CREATE TABLE submission_notices (
+    id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    period_id UUID NOT NULL REFERENCES shift_periods(period_id),
+    staff_id  UUID NOT NULL REFERENCES employees(staff_id),
+    kind      TEXT NOT NULL CHECK (kind IN ('pre_deadline_reminder','deadline_treated_unavailable')),
+    sent_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (period_id, staff_id, kind)
+);
+-- 매장 설정. 시드: unconfirmed_warning_days=7 (근무 시작 N일 전까지 미확정이면 경고 강조), reminder_interval_hours=24
+-- [印] 나중(12/4 이후)
+CREATE TABLE store_settings (
+    key        TEXT PRIMARY KEY,
+    value      JSONB NOT NULL,
+    updated_by UUID REFERENCES manager_accounts(manager_id),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO store_settings(key, value) VALUES ('unconfirmed_warning_days','7'), ('reminder_interval_hours','24');
+## [id=s5] 5. 검증 코드・지침의 틀데모에 필요 M-1・M-2
+### 5-1. 검증 위반 코드 (validation_violations.code, 11종)데모에 필요 M-1
+ | 코드 | 의미 | 예외 허용(waive)
+ | SKILL_SHORTAGE | 특정 업무의 단독 대응 인원 부족(can_solo만 센다. unconfirmed는 세지 않는다) | 가능
+ | EXCLUSIVE_GROUP_SHORTAGE | 단독 업무끼리 겸무할 수 없어서 생기는 인원 부족 | 가능
+ | QUAL_MISSING | 필수 자격 미보유 | 불가
+ | HEADCOUNT_SHORTAGE / HEADCOUNT_EXCESS | 총원 부족 / 초과(초과는 참고 정보. 구조도 4-5) | 가능
+ | NEWCOMER_RATIO | 신입 비율 초과(구조도에 없음. 취급 미결) | 미결
+ | UNVERIFIED_SKILL | 스킬 미검증 인원이 배치됨(구조도에 없음. 취급 미결) | 미결
+ | TRAINEE_UNSUPERVISED | needs_guidance 인원에게 같은 시간대의 can_solo 멘토가 없음 | 가능
+ | DOUBLE_BOOKING | 같은 사람의 시간이 겹치는 배정 | 불가
+ | OUTSIDE_AVAILABILITY | 제출한 희망 시간 밖의 배치(경고/위반 구분은 미결) | 가능(추측입니다)
+ | RULE_VIOLATION 신규 | 점장 지침의 틀 규칙 위반. guideline_item_id로 규칙을 가리킨다. status=trial인 규칙은 경고만 | 가능
+미제출 직원은 마감 시 「희망 없음(불가)」으로 취급한다(submission_notices.kind='deadline_treated_unavailable', 관리자에게 통지). 확정 후 수정에서는 물리(DOUBLE_BOOKING 등)・자격(QUAL_MISSING) 위반을 차단하고 그 밖은 reason을 남기고 허용한다.
+#### V9 제안(11/12): 반휴와 「신청 시각」 검사데모에 필요 M-1
+제안이다. 11종 목록에는 아직 넣지 않았고, 기준 문서에도 반영되지 않았다(기준 문서의 규칙: 먼저 기준 문서를 고친다 → 3명에게 알린다 → 코드).
+ | 대상 | kind | 배치의 조건 | 지금의 검사 | 제안
+ | 알바・파트 | available | 신청한 시간의 범위 안 | 시제품 check_requests가 검사한다(알바만) | 변경 없음. 코드는 OUTSIDE_AVAILABILITY
+ | 정직원 | available(출근 희망일) | 신청한 시간의 범위 안(희망) | 검사 없음(check_requests가 사원을 보지 않는다) | 검사를 더한다. 필수/경고는 미결(추측입니다: 사원의 출근 희망은 보장이 아닌 희망이라 경고)
+ | 전원(정직원・파트・알바) | half_leave | 신청한 시각 그대로(범위 안이 아니라 일치) | 검사 없음 | 검사를 더한다(필수・재편성, 추측입니다). 새 코드 HALF_LEAVE_MISMATCH를 제안
+- OUTSIDE_AVAILABILITY와의 관계: available은 「범위의 밖」을 본다(≦). half_leave는 「일치」를 본다(＝). 「범위 안이지만 짧다・길다」는 OUTSIDE_AVAILABILITY로 잡히지 않는다. 같은 코드에 섞으면 의미가 흐려지므로 별도 코드를 제안한다(OUTSIDE_AVAILABILITY를 그대로 쓰는 안도 가능하며, 그 경우 종류를 context에 남긴다. 추측입니다).
+- 예외 허용(waive): OUTSIDE_AVAILABILITY는 「가능(추측입니다)」. HALF_LEAVE_MISMATCH는 미결(추측입니다: 불가에 가깝다. 본인과 점포가 합의한 시각이고 급여와 얽힐 수 있다. 다만 반휴의 급여 취급은 모름).
+- 반휴를 낸 날에 배치가 없는 경우의 취급은 미결(추측입니다: 반휴가 반영되지 않았으므로 위반).
+### 5-2. 지침의 틀(template_key) 후보 — 초안데모에 필요 M-2
+ | template_key | params 예(제안) | 점장의 말 예
+ | max_consecutive | {"shift":"late","limit":1} | 늦은 근무를 2번 연속으로 넣지 마
+ | max_hours | {"staff_id":…,"scope":"week","limit":20} | 이 사람은 주 20시간까지
+ | min_rest | {"hours":11} | 다음 근무까지 11시간 비워
+ | not_available | {"staff_id":…,"weekday":"sun"} | 이 사람은 일요일 불가
+ | max_count | {"staff_id":…,"scope":"week","limit":3} | 와타나베 씨는 주 3일까지
+ | min_skill | {"task_id":…,"band_id":…,"count":1} | 레지에 can_solo 1명 이상(min_solo가 별도로 필요한지는 미확인)
+ | pair | {"staff_a":…,"staff_b":…,"mode":"apart"} | 다카하시와 이토는 같은 시간에 넣지 마
+ | period_off | {"days":9} | 이번 달 지정휴일은 9일
+후보 8개는 10/25 논의 기준이다. 10/16 데모의 이름(max_days_per_week, not_together)과 다르므로 정식 이름과 params는 확정이 필요하다. 이 표의 params와 예문은 이 문서의 제안이다.
+## [id=s6] 6. API 전체 사양데모에 필요 M-1〜M-6（フォルダごと）
+공통 규칙(제안). 모든 오류 응답은 {"error":{"code":"…","message":"…"}}. 시각은 시간대를 포함한 ISO 8601(timestamptz). 날짜는 YYYY-MM-DD. UUID는 문자열. 관리자 API는 관리자 JWT, 직원 API는 매직링크로 받은 직원 JWT(본인 staff_id만 허용), webhook은 LINE 서명으로 인증한다. 요청과 응답의 필드 이름은 V7에 명시되지 않은 것이 많아 이 문서의 제안이다(구현하면서 맞춘다).
+전부 펼치기전부 접기처리 흐름 순서 000→007. 폴더를 눌러 펼친다.
+000-인증데모에 필요 M-46 API
+ | API | 권한 | 요청 | 응답 | 규칙 | V8
+ | 
+관리자 등록(초대 코드)POST /api/auth/register | 없음 | {invite_code, email, password} | 201 {manager_id} / 400 invalid code (nonexistent, expired, used, wrong store: same response) / 409 email exists | 관리자 등록(11/04 결정). 한 트랜잭션: 코드 확인(해시 비교) → 이전 활성 계정 무효 → 새 계정 생성 → 코드를 사용 완료로. 최초 1명은 이 API가 아니라 운영 스크립트가 점포와 함께 등록한다. 비밀번호는 bcrypt 해시. 횟수 제한・비밀번호 재설정은 미결 | 변경
+ | 
+초대 코드 발급POST /api/admin/invite-codes | 관리자 JWT | - | 201 {code, expires_at} (code shown once) | 관리자가 초대 코드를 발급(11/04 결정). 점포는 JWT의 관리자에서 정한다. 유효기간 1일, 1회용. DB에는 해시만 저장. 이 발급이 이전 관리자의 본인 확인을 겸한다. 코드는 화면에 표시(안. 알림은 미결) | 신규
+ | 
+관리자 로그인POST /api/auth/manager/login | 없음 | {email, password} | 200 {access_token, manager_id} / 401 같은 응답(이메일・비밀번호 구분 안 함) | 이메일/비밀번호로 관리자 로그인, JWT 발급 | 유지
+ | 
+로그아웃POST /api/auth/logout | 관리자 JWT | - | 204 | 관리자 세션 종료(서버측 토큰 폐기는 미구현) | 유지
+ | 
+매직링크 발급POST /api/staff/{staff_id}/magic-link | 관리자 JWT/내부 | {period_id} | 201 {token, expires_at} / 409 LINE 미매칭 | 매직링크 발급+LINE 발송. expires_at = shift_periods.submission_deadline. LINE 미매칭 직원에게는 발급 불가. 발송 실패 시 트랜잭션 롤백 | 유지
+ | 
+매직링크로 직원 세션 시작GET /api/pwa/session?token= | 없음 | token (query) | 200 {session_jwt, staff_id, period_id} / 401 TOKEN_EXPIRED | 토큰 검증 후 직원 세션(JWT) 발급. used_at은 최초 접근 시각만 기록 | 유지
+001-직원용 (Staff-facing)데모에 필요 M-1・M-56 API
+ | API | 권한 | 요청 | 응답 | 규칙 | V8
+ | 
+희망 제출POST /api/staff/{staff_id}/availability | 직원 JWT | {period_id, items:[{date, start_time|null, end_time|null}]} (둘 다 null = 휴무 희망) | 201 {submitted_at, is_late:false} / 403 SUBMISSION_CLOSED / 422 | 마감 후 제출은 403으로 거부. 같은 날의 이전 제출은 superseded_by로 이력 보존. 본인 staff_id만 허용 | 유지
+ | 
+제출한 희망 조회GET /api/staff/{staff_id}/availability?period_id= | 직원 JWT | - | 200 [{date,start_time,end_time,submitted_at}] | 본인의 제출 현황 조회 | 유지
+ | 
+업무 목록 조회(직원)GET /api/staff/{staff_id}/tasks | 직원 JWT | - | 200 [{task_id, name}] | 본인에게 보일 업무 목록(관리자가 정의한 tasks). 불안 표시 화면용 | 신규
+ | 
+스킬 불안 업무 등록PUT /api/staff/{staff_id}/skill-concerns | 직원 JWT | {task_ids:[uuid]} (전체 교체) | 200 {task_ids} | 본인의 「불안」 업무 표시를 통째로 교체. 판정(staff_skills)에는 영향 없음 | 신규
+ | 
+스킬 불안 업무 조회GET /api/staff/{staff_id}/skill-concerns | 직원 JWT | - | 200 {task_ids} | 본인의 불안 표시 조회 | 신규
+ | 
+자기평가 초안 저장POST /api/staff/{staff_id}/skills/self-draft | 직원 JWT | - | - | 자기평가 폐지 | 삭제
+002-관리자용(마스터 데이터 CRUD)데모에 필요 M-1・M-8（2章が優先）14 API
+#### 관리자: 마스터 2장 우선
+ | API | 권한 | 요청 | 응답 | 규칙 | V8
+ | 
+업무 등록・목록POST/GET /api/admin/tasks | 관리자 JWT | {name, requires_qualification_id?, requires_solo} | 201/200 | 업무 등록・목록(관리자가 업무를 정의) | 유지
+ | 
+자격 등록・목록POST/GET /api/admin/qualifications | 관리자 JWT | {name} | 201/200 | 자격증 등록・목록 | 유지
+ | 
+시간대 등록・목록POST/GET /api/admin/time-bands | 관리자 JWT | {name,start_time,end_time,sort_order} | 201/200 / 409 겹침 | 시간대 등록・목록. 겹침은 DB의 EXCLUDE 제약이 막는다 | 유지
+#### 관리자: 스킬시트
+ | API | 권한 | 요청 | 응답 | 규칙 | V8
+ | 
+스킬시트 조회GET /api/admin/staff-skills?period_id= | 관리자 JWT | - | 200 [{staff_id,task_id,status,verified_by,verified_date,concerned}] | 행이 없는 (직원,업무)는 status='unconfirmed'로 코드가 채워 반환(제안). self_status는 없음 | 변경
+ | 
+스킬시트 갱신PUT /api/admin/staff-skills | 관리자 JWT | [{staff_id,task_id,status}] status ∈ unconfirmed|needs_guidance|can_solo | 200 | 관리자만 판정. verified_by/verified_date를 서버가 기록 | 변경
+ | 
+미확인 스킬 집계GET /api/admin/staff-skills/unconfirmed-summary | 관리자 JWT | - | 200 {count, staff:[{staff_id,tasks:[task_id]}]} | 「미확인 N명」 알림용. 코드 집계(LLM 비노출) | 신규
+#### 관리자: 기간・설정 2장 우선
+ | API | 권한 | 요청 | 응답 | 규칙 | V8
+ | 
+기간 등록POST /api/admin/shift-periods | 관리자 JWT | {period_start,period_end,submission_deadline,notify_at,max_revision?} | 201 {period_id} / 422 notify_at > deadline | 시간대를 포함한 timestamptz 필수. notify_at ≤ submission_deadline를 검사 | 유지
+ | 
+기간 목록GET /api/admin/shift-periods | 관리자 JWT | - | 200 [...] | 기간 목록 | 유지
+ | 
+기간 수정PATCH /api/admin/shift-periods/{period_id} | 관리자 JWT | {submission_deadline?,notify_at?,max_revision?} | 200 | 마감 시각・발송 예정・상한 수정 | 유지
+ | 
+편성 즉시 시작POST /api/admin/shift-periods/{period_id}/start-now | 관리자 JWT | - | 202 {thread_id} / 409 이미 시작됨 | 「지금 시작」(D-a). early_started_at을 기록하고 메인 그래프를 시작 | 신규
+ | 
+점포 설정 조회・갱신GET/PUT /api/admin/settings | 관리자 JWT | PUT {unconfirmed_warning_days?, reminder_interval_hours?} | 200 | store_settings 조회・수정(기본 7일, 24시간) | 신규
+ | 
+휴무 규칙 설정PUT /api/admin/shift-periods/{period_id}/off-rules | 관리자 JWT | {designated_off_days, applies_to} | 200 | 지정휴일 수. 비교만 하고 막지 않음 | 보류
+ | 
+유급휴가 등록POST /api/admin/paid-leave | 관리자 JWT | {staff_id,date,period_id} | 201 | 유급 사용 기록 | 보류
+ | 
+휴무일 조회GET /api/admin/shift-periods/{period_id}/off-days | 관리자 JWT | - | 200 | 직원별 휴일 수 집계(코드) | 보류
+003-관리자용(배치 기준 및 제약 설정)나중(12/4 이후)4 API
+ | API | 권한 | 요청 | 응답 | 규칙 | V8
+ | 
+필요 인원 조회・설정GET/PUT /api/admin/staffing-requirements | 관리자 JWT | PUT [{band_id,task_id,required_count}] | 200 | band×task 필요 인원. 서비스 계층이 시간대의 빈틈(check_time_band_gaps)을 검사 | 유지
+ | 
+단독 필요 인원 조회・설정GET/PUT /api/admin/required-solo | 관리자 JWT | PUT [{band_id,task_id,required_count}] | 200 | band×task 단독 대응 인원 | 유지
+ | 
+혼잡 수동 설정 조회・설정GET/PUT /api/admin/congestion-manual | 관리자 JWT | PUT [{date,band_id,task_id,is_manual_override,note}] | 200 / 422 requires_solo=false 업무 | 날짜×시간대×업무의 혼잡 승인(+1). requires_solo=false 업무는 거부 | 유지
+ | 
+필요 인원 제안 조회GET /api/admin/staffing-requirements/suggestions | 관리자 JWT | - | 200 | 과거 실적 집계 제안(historical_shifts 의존) | 보류
+004-관리자용(LINE 연동 및 계정 매칭)나중(12/4 이후)3 API
+#### LINE Webhook
+ | API | 권한 | 요청 | 응답 | 규칙 | V8
+ | 
+LINE 메시지 수신POST /api/webhooks/line | LINE 서명 | LINE Messaging API 이벤트(서명 헤더) | 200 | 서명 검증. Quick Reply postback(contact_attempt_id 포함)만 처리해 멈춘 그래프를 재개. 자유 텍스트는 고정 안내문 회신 | 유지
+#### 관리자: LINE 매칭 2장 우선
+ | API | 권한 | 요청 | 응답 | 규칙 | V8
+ | 
+LINE 등록자 목록GET /api/admin/line-registry | 관리자 JWT | - | 200 | LINE 미연동 직원 목록 | 유지
+ | 
+LINE 계정 매칭POST /api/admin/line-registry/match | 관리자 JWT | {line_user_id, staff_id} | 200 | 1클릭 수동 매칭 | 유지
+005-관리자용(시프트 Draft 생성・검증・승인)데모에 필요 M-1・M-2・M-314 API
+#### 관리자: 초안・검증・승인
+ | API | 권한 | 요청 | 응답 | 규칙 | V8
+ | 
+초안 조회GET /api/admin/drafts/{draft_id} | 관리자 JWT | - | 200 {draft, assignments, validation:{ok,violations}, guideline_set, waivers} | 초안과 최신 검증 결과 조회 | 변경
+ | 
+재편성 요청POST /api/admin/drafts/rebalance | 관리자 JWT | {period_id, reason, guideline_set_id?} | 202 {draft_id} | LLM에 (재)편성을 시킨다. 완료된 초안은 반드시 validate_draft를 통과해야 저장된다 | 변경
+ | 
+배치 수동 수정PUT /api/admin/drafts/{draft_id}/assignments | 관리자 JWT | [{staff_id,date,start_time,end_time}|{…null} 삭제] + reason? | 200 {validation} / 409 확정 후 물리・자격 위반 | 점장 직접 수정. source='manager_edit', draft_edit_log 기록 후 재검증. 확정 후(phase=after_approval)는 reason 필수, 물리・자격 위반은 차단 | 변경
+ | 
+수정 이력 조회GET /api/admin/drafts/{draft_id}/edits | 관리자 JWT | - | 200 [draft_edit_log] | 수정 이력(누가・언제・무엇을・이유) | 유지
+ | 
+위반 허용POST /api/admin/drafts/{draft_id}/waive | 관리자 JWT | {violation_key, reason} | 201 | 예외 허용(QUAL_MISSING・DOUBLE_BOOKING는 불가). 초안이 바뀌면 허용 삭제 | 신규
+ | 
+초안 승인(확정)POST /api/admin/drafts/{draft_id}/approve | 관리자 JWT | - | 200 / 409 {violations} check_approval 실패 | check_approval 통과 시에만 확정(commit_shift)→LINE 통지. 지침 버전이 최신이 아니면 먼저 「다시 편성」을 묻는다 | 변경
+ | 
+초안 반려(재조정)POST /api/admin/drafts/{draft_id}/reject | 관리자 JWT | {instruction} | 200 {next:'recompose'|'manager_edit'} | 반려+지시문. 횟수 상한(D-e)은 미결 | 변경
+ | 
+가중치 대화POST /api/admin/drafts/{draft_id}/weight-dialog | 관리자 JWT | - | - | T2 폐지 | 삭제
+ | 
+가중치 프리셋 조회GET /api/admin/weight-presets | 관리자 JWT | - | - | 프리셋 폐지 | 삭제
+#### 관리자: 지침・상담
+ | API | 권한 | 요청 | 응답 | 규칙 | V8
+ | 
+AI 상담POST /api/admin/consult | 관리자 JWT | {entry:'store_settings'|'announcement'|'approval_screen', thread_id?, message} | 200 {reply, proposed_items:[…], needs_confirmation} | 상담 그래프(별도 그래프) 입구. 분류: 법 위반이면 거부+이유 / 이번 건만이면 지시 / 계속이면 틀 맞추기→틀이 없으면 코드 생성→그래도 안 되면 지침만. 저장은 점장 확인 후 | 신규
+ | 
+지침 조회GET /api/admin/guidelines | 관리자 JWT | ?version= | 200 {set, items} | 현재(또는 지정 버전)의 지침 | 신규
+ | 
+지침 등록POST /api/admin/guidelines | 관리자 JWT | {items:[{source_text,kind,template_key?,params?}]} | 201 {set_id, version_no} | 새 버전 생성. 편성 중인 draft는 이전 버전을 계속 가리킨다(D-i) | 신규
+ | 
+지침 항목 수정PATCH /api/admin/guidelines/items/{item_id} | 관리자 JWT | {status: trial|confirmed|stopped} | 200 | 시험 중→확정/정지 | 신규
+ | 
+지침 항목 피드백POST /api/admin/guidelines/items/{item_id}/feedback | 관리자 JWT | {draft_id, verdict: correct|wrong} | 201 | 「맞음/틀림」 기록. 확정/정지의 근거 | 신규
+006-조정 루프(다음 단계)데모에 필요 M-6（最後・外せる）4 API
+ | API | 권한 | 요청 | 응답 | 규칙 | V8
+ | 
+연락 라운드 조회GET /api/admin/contact-rounds/{draft_id} | 관리자 JWT | - | 200 | 루프 현황 | 보류
+ | 
+연락 상한 변경PATCH /api/admin/contact-rounds/max-contacts | 관리자 JWT | {max_contacts} | 200 | 순차 연락 상한(기본 3) | 보류
+ | 
+연락 라운드 취소POST /api/admin/contact-rounds/{id}/cancel | 관리자 JWT | - | 200 | 루프 전체 취소 | 보류
+ | 
+현재 연락 건너뛰기POST /api/admin/contact-rounds/{id}/skip-current | 관리자 JWT | - | 200 | 현재 대기 중인 한 명을 manually_skipped로 하고 다음으로 | 보류
+007-관리자용(도입 시 시프트표 해석)나중(12/4 이후)5 API
+ | API | 권한 | 요청 | 응답 | 규칙 | V8
+ | 
+도입 Excel 업로드POST /api/admin/onboarding/imports | 관리자 JWT | multipart .xlsx (≤5MB) | 201 {import_id} | 보류. V7 PART 3-007 참조 | 보류
+ | 
+도입 Excel 해석POST /api/admin/onboarding/imports/{id}/interpret | 관리자 JWT | - | 202 | 〃 | 보류
+ | 
+도입 Excel 조회・삭제GET/DELETE /api/admin/onboarding/imports/{id} | 관리자 JWT | - | 200 | 〃 | 보류
+ | 
+해석 결과 확인PUT /api/admin/onboarding/imports/{id}/confirmation | 관리자 JWT | {confirmed} | 200 | 〃 | 보류
+ | 
+해석 결과 반영POST /api/admin/onboarding/imports/{id}/apply | 관리자 JWT | - | 200 | 〃 | 보류
+## [id=s7] 7. MCP 도구데모에 필요 M-7
+- 읽기(LLM에 노출): get_staff_availability, get_staff_skills(판정값만. 본인의 불안 표시는 노출하지 않는다), get_staffing_requirements, get_congestion_level, get_current_draft, get_validation_result, get_guidelines(신규).
+- 제안(LLM에 노출): propose_shift_draft(LLM 편성안 제출. 저장 전에 코드가 형식과 검증을 거친다), propose_shortage_explanation, propose_contact_order.
+- 삭제: preview_weights, propose_weights, propose_rebalance의 가중치 자동 완화.
+- 코드 전용(비노출): commit_shift, request_staff_confirmation, record_staff_response, check_approval, validate_draft, 알림・스케줄러 잡. 쓰기(set)는 LLM에 열지 않는다.
+- MCP 서버를 어디서 누가 돌릴지는 서빙 방식(AgentCore / Agent Server / 직접 구현)에 따라 달라진다. 아직 결정 전이다.
+## [id=s8] 8. 스케줄러 잡정해 두기만
+ | 잡 | 동작 | 상태
+ | dispatch_period_notifications | notify_at ≤ now() AND notified_at IS NULL인 기간에 대해 LINE 매칭이 끝난 전 직원에게 매직링크를 발송하고 notified_at을 기록(중복 발송 방지) | 유지
+ | start_period_graph | submission_deadline(또는 early_started_at)이 되면 메인 그래프를 1건 시작 | 변경
+ | pre_deadline_reminder | 마감 전에 미제출자에게 LINE 1회(submission_notices에 기록). 마감 몇 시간 전인지는 미결 | 신규
+ | treat_unsubmitted_as_unavailable | 마감 시각에 미제출자를 「불가」로 취급하고 관리자에게 통지 | 신규
+ | remind_unconfirmed | 미확정 상태가 이어지면 24시간마다 관리자에게 LINE 리마인드, 근무 시작 N일 전(기본 7일)부터 경고 강조. 자동 확정은 하지 않는다(D-f) | 신규
+ | check_contact_timeouts | 2시간 무응답 감시(조율 루프) | 다음 단계
+ | purge_onboarding_imports | 도입 Excel 데이터 삭제 | 보류
+## [id=s9] 9. 미결 사항정해 두기만
+ | # | 항목 | 메모
+ | 1 | 스킬 확인에서 미확인이 있을 때 대기인가 진행인가
+나중(12/4 이후) | 10/16 그림은 「대기」, 10/16 결정 skill은 「지도필요로 보고 진행 + 점장에게 통지」. 어느 쪽이 현행인지 확인 필요
+ | 2 | 「지시 반영」을 반려와 별도 상태로 둘지
+정해 두기만 | 9/29 의제 18-5의 「반려를 없애고 지시 반영으로 통일(10/8)」 기록은 찾지 못함
+ | 3 | 재편성・반려 횟수 상한(D-e)
+데모에 필요 M-1・M-3（基準文書で決定：自動3・依頼2） | 후보: 재편성 3회 + 반려 2회 후 점장 직접 수정
+ | 4 | 「책임자」의 취급
+나중(12/4 이후) | 업무(스킬)로 두는 안(제안). 「이 날의 책임자」는 역할이므로 task_id가 없는 현재 구조에서는 다음 단계
+ | 5 | 틀의 정식 이름과 min_solo 추가
+데모에 필요 M-2（枠3つは決定。min_soloは後回し） | 4장 참조
+ | 6 | 코드 생성 규칙의 격리 실행 위치
+나중(12/4 이후) | 서빙 방식과 함께 결정(D-h). 미구현
+ | 7 | 개인정보・법적 정의
+정해 두기만 | 교수가 「정의 미완료」라고 지적(10/13). 최종 판단은 법률 자격자의 몫. 설계에서는 이름을 AI에 보내지 않는 것을 기본으로 한다
+ | 8 | staff_skills의 행 누락
+나중(12/4 이후) | 행이 없으면 unconfirmed로 본다(제안, 미승인)
+ | 9 | 일괄 배정・온보딩 불완전의 영향
+나중(12/4 이후) | 미측정
+ | 10 | staff_skill_history
+나중(12/4 이후) | 9/11 회신에 언급됐지만 V7에 없다. 필요한지 미확인
+ | 11 | 이전 관리자가 움직일 수 없을 때
+데모에 필요 M-4（運営が発行で決定） | 운영이 코드를 발급하는 안(invite_codes.issued_by = NULL). 운영이 발급할 때의 본인 확인 방법은 미정
+ | 12 | 초대 코드의 무차별 대입 공격 대책・1일 편성 횟수 상한
+정해 두기만 | 코드 시도 횟수 제한은 제안(미반영). 점포당 하루 편성 횟수 상한은 MVP에서 만들지 않음
+ | 13 | 비밀번호 재설정
+나중(12/4 이후) | MVP에 넣을지 미결
+ | 14 | 코드를 새 관리자에게 전하는 방법
+정해 두기만 | 화면 표시만(현재 안) / 알림도 함. 메일로 보내는 안은 별도 검토 중이었으나 11/04의 결정은 화면 표시
+ | 15 | 전일 유급(paid_leave)을 파트・알바에 허용할지 미결(11/12 아즈키). 반휴(half_leave)는 파트・알바도 가능.
+정해 두기만 | 11/12 아즈키
+ | 16 | 반휴의 급여 취급(유급인지)은 모름. 이번에는 정하지 않는다(11/12 아즈키, Q2).
+정해 두기만 | 11/12 아즈키
+ | 17 | 반휴를 낸 날에 배치가 없을 때의 취급 미결(추측입니다: 위반).
+정해 두기만 | 11/12 아즈키
+## [id=s10] 10. 검증 방법데모에 필요 M-1
+- DDL: 4장의 SQL은 PostgreSQL 16에서 오류 없이 실행되고, 잘못된 값(틀 없는 틀 규칙, 지침인데 코드가 붙은 항목, 구 코드 agent)은 거부되는 것을 확인했다. V7 전체 DDL 위에서의 통합 실행은 앞으로의 과제다.
+- 출처: 각 결정은 feedback-1013.md・feedback-1020.md, 포트폴리오 설명용 노트, 이 문서 12장의 날짜로 대조할 수 있다.
+- LLM 편성의 실효성: 10/20 계획의 측정(첫 검증 통과율, 평균 재편성 횟수, 위반 셀 밖의 변경, 토큰・시간, 무수정 채택률)이 나오기 전에는 단정하지 않는다.
+## [id=s0] 11. 개정 요약정해 두기만
+### V9(11/12)의 변경
+- MVP 장(2장) 신설: 인증 4종류, 설정・제출 CRUD, 15 테이블 DDL(v17). MVP의 DDL은 2장이 유일한 정의.
+- 팀의 기준 문서(11/08판) 반영: 범위(M-1~M-8)・담당・검증 규칙・LLM 호출 약속・실행 환경(2-6). 초대 코드는 운영자 발급, 자격자는 인원수(min_qualified), thread_id 추가.
+- 희망 테이블: kind(available / off / paid_leave / half_leave). 반휴는 그 시간 그대로 출근으로 배치, 상한에 세지 않음(11/12). employees.closing_ok 추가(11/12 아즈키 결정).
+- 같은 이름의 이중 정의를 하나로: 4장에서 10개를 빼고 이름마다 한 번만(15+24=39). 4장은 V8만의 24개(참고용).
+- 리더 요청(11/12): 모든 섹션・테이블・미결 사항에 「데모에 필요 M-n / 정해 두기만 / 나중(12/4 이후)」 인. 39 테이블 분류(3-0장). 맨 위에 「11/20 전에 읽는 곳과 담당」.
+- 6장 API를 처리 흐름 순서의 Postman식 폴더(000~007)로, 각 API에 이름. 장 순서를 정리(1장 처리 흐름 → … → 11장 개정 요약 → 12장 확정 사항)하고 번호를 맞춤.
+- min_headcount: 설정=경고 / 지시=보장 / 지시가 있는 칸은 지시의 숫자로 덮어쓴다(11/12 정함, 2-6 ⑦).
+- State 안(A3)을 1-3장에 추가. 「余り」를 위반으로 하는 안(아즈키 11/12, 기준 문서 미반영).
+- 참고: 표의 「V8」 열(유지/변경/신규)은 V7→V8의 변경 표시 그대로다. V9에서 바뀐 곳은 위 항목과 2장・3-0장에 있다.
+- 편성 주체가 솔버에서 LLM으로 바뀐다(11/3 확정). 목적함수 5축・프리셋・T2 대화・CP-SAT 호출과 관련된 테이블과 API를 삭제한다.
+- 검증(validate, 코드)이 유일한 보증이다. LLM의 출력은 그대로 채택하지 않고 반드시 코드 검증을 거친다. LLM이 정확히 편성하는지는 실측 전이라 효과를 단정하지 않는다.
+- 스킬시트: 자기평가 초안 테이블을 삭제하고, 본인의 「불안」 표시(staff_skill_concerns)를 신설한다. 판정값은 관리자만 정한다.
+- 점장의 지침을 저장하는 곳을 신설한다(D-h, D-i). 틀(템플릿)에 맞는 말은 규칙으로, 틀이 없으면 지침으로만 저장하고, 편성이 시작될 때의 지침 버전을 고정한다.
+- DB 저장값을 영어 코드로 통일한다(10/1 결정). V7 본문은 아직 한국어 값이다.
+- 관리자 계정을 초대 코드 방식으로 한다(11/04 결정). 1점포 1명, 코드는 1회용・유효 1일, 최초 1명은 운영 스크립트. stores와 invite_codes를 신설하고 manager_accounts를 점포에 연결한다.
+- DB는 PostgreSQL 단일(10/20 우선). 체크포인트 저장소도 이에 따른다.
+- 이번 발표용으로는 1개 경로에 필요한 부분을 직접 쓴다(희망 제출 → 초안 → 검증 → 승인 대기 → 확정). 연락 루프・휴일 관리・Excel 도입은 「다음 단계」다.
+## [id=s1] 12. 확정 사항과 근거정해 두기만
+ | # | 결정 | 날짜 | 상태
+ | a | LLM이 직접 편성한다. 솔버(CP-SAT)는 쓰지 않는다 | 10/16 D-d, 11/3 최종 확인 | 확정 (효과는 실측 전)
+ | b | DB는 PostgreSQL 단일. 서빙은 Aegra(도쿄 EC2・docker compose) | 10/20 | 확정 우선(10/15의 DynamoDB안은 전제가 사라짐)
+ | c | 점장의 말은 틀을 먼저 찾고, 없으면 코드 생성(격리 실행, 시험 중에는 경고만). 틀도 코드도 못 되는 말은 지침으로만 저장 | 10/16 D-h | 확정 (코드 생성은 미구현)
+ | d | 편성 시작 시점의 지침 버전을 고정. 바뀌면 승인 화면에서 「다시 편성할까요?」를 묻는다 | 10/16 D-i | 확정
+ | e | 상담은 별도 그래프. 입구 3개(매장 설정・공고・승인 화면) | 10/16 D-c | 확정
+ | f | 24시간마다 LINE 리마인드, 근무 시작 N일 전까지 미확정이면 경고 강조. 자동 확정은 하지 않는다. N=7일(관리자 설정) | 10/16 D-f | 확정
+ | g | DB 저장값은 언어 독립 영어 코드 | 10/1 | 확정
+ | h | 확정 후 수정: 물리・자격 위반은 막고, 그 밖은 이유를 기록하고 허용 | 합의 | 합의
+ | i | 반려는 관리자의 판단으로 한다(지시를 함께 남긴다) | 11/3 | 확정 (「지시 반영」을 별도 상태로 둘지는 미정)
+ | j | 프로젝트 종료일 12/4 | 11/3 | 확정
+ | l | 관리자는 1점포에 1명. 등록은 초대 코드(1회용・유효 1일)로 하고, 발급은 현 관리자가 한다(교대 시 본인 확인을 겸함). 최초 1명은 운영이 스크립트로 등록. MVP에 넣는다(승혁 목록 E9, 혁준 담당) | 11/04 | 확정 (열・API 이름은 제안)
+ | k | DB 접근은 MCP 뒤에 둔다. 쓰기는 LLM에 직접 허용하지 않고 코드 검증을 거친다. DB를 구성요소 사이의 중개 수단으로 쓰지 않는다 | 10/13・10/16・10/20 교수 | 교수 지적
+CoverShift · 2026-11-12 · 作成：アズキ（技術担当） · 状態：ドラフト、リーダー確認待ち

@@ -1,0 +1,7 @@
+# web.Dockerfile 전용 빌드 맥락: web/ 만 쓴다
+*
+!web
+web/node_modules
+web/dist
+**/.env
+**/.env.*

@@ -1,0 +1,162 @@
+/* 배치 개념: 「장부(帳簿)」 — 테두리는 조용히, 페이지의 주인공은 근무표. 요약 → 표 → 목록 순으로 읽힌다.
+
+   디자인 규칙 (코디네이터 지시, artifact-design 기준을 이 화면에 맞춘 것)
+   - 성격: 실무 도구. 다듬되 꾸미지 않는다. 대상 = 점장(PC·태블릿), 직원(휴대폰).
+     승인 화면의 일 하나 = 무엇이 틀렸는지 보고, 정하고, 승인한다.
+   - 색은 이 파일의 토큰만 쓴다. 컴포넌트에 색 리터럴 금지.
+     이름 색 6개(paper · panel · ink · ink-soft · line · ai=藍) + 의미 색(required 빨강 / warning 호박 / ok 초록,
+     강조색과 따로) + 달력 색(土 파랑 / 日・祝 빨강).
+   - 두 테마: :root = 라이트. prefers-color-scheme: dark 는 :root:not([data-theme="light"]) 에서,
+     같은 값을 :root[data-theme="dark"] 에도. 다크는 뒤집기가 아니라 따로 고른 값. 강조색은 양쪽에서 대비 7:1 근처.
+   - 무채색은 강조색(藍) 쪽으로 살짝 푸르게. 순회색 금지.
+     피할 것: 크림+세리프+테라코타, 검정+형광 초록, 보라→파랑 그라데이션, 이모지 표시, 전부 가운데 정렬,
+     모든 블록에 같은 큰 둥근 모서리+그림자, 카드 왼쪽 색 막대.
+   - 글꼴 3역할: 본문(시스템 일본어 고딕), 제목(Zen Kaku Gothic New 700, @fontsource 로 동봉 — 시연 PC 가 오프라인일 수 있음),
+     코드(고정폭, 위반 코드·토큰). 숫자가 줄 맞춤되는 곳은 전부 tabular-nums. 제목은 text-wrap: balance.
+   - 간격은 아래 단계만. 배치는 flex/grid + gap. 모서리 반경은 하나(--radius).
+   - 카드(테두리·채움·그림자)는 정말 따로 떨어진 물건에만: 지시 미리보기, 대화 상자, LINE 메시지, 알림.
+   - 상태는 모양으로도: 필수 = 실선+모서리 삼각, 경고 = 점선. 색만으로 구분하지 않는다.
+   - 키보드 초점은 어디서나 보이게. prefers-reduced-motion 존중. 모든 입력에 고정 id + label. */
+
+:root {
+  /* 이름 색 */
+  --paper: #f4f6fa;
+  --panel: #ffffff;
+  --ink: #1a1f2e;
+  --ink-soft: #566078;
+  --line: #d8dce7;
+  --ai: #3346a3; /* 藍 — 강조색 */
+
+  /* 이름 색에서 나온 단계 */
+  --panel-sunken: #eceff5;
+  --ink-faint: #8790a6;
+  --line-strong: #b2b9cb;
+  --ai-strong: #283889;
+  --ai-soft: #e5e9f8;
+  --on-ai: #ffffff;
+  --focus: #3346a3;
+
+  /* 의미 색 (강조색과 따로) */
+  --required: #b42318;
+  --required-soft: #fdecea;
+  --warning: #8a5300;
+  --warning-line: #cf8a00;
+  --warning-soft: #fff3db;
+  --ok: #1f7a3a;
+  --ok-soft: #e5f3e9;
+
+  /* 달력 (일본 관습: 土 파랑, 日・祝 빨강) */
+  --sat: #1d5fc4;
+  --sat-soft: #ebf2fd;
+  --sun: #c0362c;
+  --sun-soft: #fcefee;
+
+  --shadow-pop: 0 10px 30px rgb(20 28 60 / 0.16), 0 2px 6px rgb(20 28 60 / 0.08);
+  --backdrop: rgb(10 14 30 / 0.45);
+
+  /* 글꼴 */
+  --font-body: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', 'Noto Sans KR', 'Yu Gothic UI', 'Meiryo', system-ui, sans-serif;
+  --font-heading: 'Zen Kaku Gothic New', var(--font-body);
+  --font-mono: ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
+
+  /* 글자 크기 단계 */
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.8125rem;
+  --fs-md: 0.9375rem;
+  --fs-input: 1rem; /* iOS 는 16px 미만 입력칸에서 확대한다 */
+  --fs-lg: 1.125rem;
+  --fs-xl: 1.375rem;
+  --fs-2xl: 1.75rem;
+  --lh-tight: 1.3;
+  --lh-body: 1.65;
+
+  /* 간격 단계 */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+
+  --radius: 6px;
+  --touch: 44px; /* 손가락 누름 최소 높이 */
+
+  /* 근무표 */
+  --cell-w: 3.6rem;
+  --rowhead-w: 12rem;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --paper: #10131b;
+    --panel: #181c27;
+    --ink: #e4e7f0;
+    --ink-soft: #a1a8bc;
+    --line: #2c3244;
+    --ai: #9aabff;
+
+    --panel-sunken: #212636;
+    --ink-faint: #6e768c;
+    --line-strong: #454d66;
+    --ai-strong: #b7c3ff;
+    --ai-soft: #242b4c;
+    --on-ai: #0e1330;
+    --focus: #9aabff;
+
+    --required: #ff7d73;
+    --required-soft: #3a1c1f;
+    --warning: #f3b649;
+    --warning-line: #e0a12b;
+    --warning-soft: #33290f;
+    --ok: #6fcf86;
+    --ok-soft: #16301e;
+
+    --sat: #86b4ff;
+    --sat-soft: #17233d;
+    --sun: #ff9087;
+    --sun-soft: #311c1e;
+
+    --shadow-pop: 0 12px 32px rgb(0 0 0 / 0.55), 0 2px 6px rgb(0 0 0 / 0.4);
+    --backdrop: rgb(0 0 0 / 0.6);
+
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --paper: #10131b;
+  --panel: #181c27;
+  --ink: #e4e7f0;
+  --ink-soft: #a1a8bc;
+  --line: #2c3244;
+  --ai: #9aabff;
+
+  --panel-sunken: #212636;
+  --ink-faint: #6e768c;
+  --line-strong: #454d66;
+  --ai-strong: #b7c3ff;
+  --ai-soft: #242b4c;
+  --on-ai: #0e1330;
+  --focus: #9aabff;
+
+  --required: #ff7d73;
+  --required-soft: #3a1c1f;
+  --warning: #f3b649;
+  --warning-line: #e0a12b;
+  --warning-soft: #33290f;
+  --ok: #6fcf86;
+  --ok-soft: #16301e;
+
+  --sat: #86b4ff;
+  --sat-soft: #17233d;
+  --sun: #ff9087;
+  --sun-soft: #311c1e;
+
+  --shadow-pop: 0 12px 32px rgb(0 0 0 / 0.55), 0 2px 6px rgb(0 0 0 / 0.4);
+  --backdrop: rgb(0 0 0 / 0.6);
+
+  color-scheme: dark;
+}

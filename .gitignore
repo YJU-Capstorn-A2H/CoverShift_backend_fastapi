@@ -1,33 +1,8 @@
-# ===== 비밀 정보 (가장 중요) =====
 .env
-.env.*
-!.env.example
-
-# ===== 파이썬 작업 공간・자동 생성물 =====
 .venv/
-venv/
 __pycache__/
-*.py[cod]
-*.egg-info/
 .pytest_cache/
-.mypy_cache/
+web/node_modules/
+web/dist/
+logs/
 .ruff_cache/
-.coverage
-htmlcov/
-
-# ===== 로그・임시 파일 =====
-*.log
-*.tmp
-
-# ===== 에디터 개인 설정 =====
-.vscode/
-.idea/
-
-# ===== OS가 멋대로 만드는 파일 =====
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# ===== 프론트(Vue)를 같은 곳에 둘 경우 =====
-node_modules/
-dist/

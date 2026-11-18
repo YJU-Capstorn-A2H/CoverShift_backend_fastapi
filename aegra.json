@@ -1,0 +1,10 @@
+{
+  "name": "covershift",
+  "dependencies": ["."],
+  "graphs": {
+    "shift": "./app/graph/aegra_entry.py:graph"
+  },
+  "checkpointer": {
+    "durability": "sync"
+  }
+}

@@ -1,0 +1,15 @@
+# Dockerfile 전용 빌드 맥락 제외 목록 (BuildKit 이 Dockerfile 옆의 <이름>.dockerignore 를 쓴다)
+# .env 는 절대 이미지에 들어가지 않게 (V9_ko 511 「키는 .env, 커밋 금지」)
+.env
+.env.*
+**/.env
+.venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+tests
+harness
+spec
+tools
+web
+*.log
