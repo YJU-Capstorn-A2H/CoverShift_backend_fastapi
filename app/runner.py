@@ -239,9 +239,9 @@ class _Runs:
 
 def default_graph_factory() -> GraphFactory:
     try:
-        from app.graph.build import build_graph  # 그래프 에이전트 소유
+        from app.graph_seung.build import build_graph  # 그래프 에이전트 소유
     except ImportError as e:
-        raise RuntimeError("app.graph.build.build_graph 를 import 하지 못했습니다 (그래프가 아직 없거나 import 오류)") from e
+        raise RuntimeError("app.graph_seung.build.build_graph 를 import 하지 못했습니다 (그래프가 아직 없거나 import 오류)") from e
     return build_graph
 
 

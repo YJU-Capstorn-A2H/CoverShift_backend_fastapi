@@ -1,0 +1,8 @@
+{
+  "name": "covershift-runtime-e2e",
+  "dependencies": ["."],
+  "graphs": {
+    "shift": "./dummy_graph.py:graph",
+    "shift_fail": "./dummy_graph.py:graph_fail"
+  }
+}

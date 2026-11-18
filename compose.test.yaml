@@ -1,0 +1,21 @@
+# 시험 전용 Postgres. 데이터는 tmpfs(메모리)라 컨테이너를 내리면 사라진다 — 일부러 그렇게 했다.
+# 기존 shift-agent-db(5433)·handwritten-reference(5441)와 포트·프로젝트 이름이 겹치지 않게 한다.
+# 실행: docker compose -f compose.test.yaml -p mvp-test up -d --wait
+# 계정 mvp/mvp 는 이 시험 컨테이너 전용 값이다(시크릿 아님). 시연·운영 값은 .env 로 받는다.
+services:
+  db:
+    image: postgres:16.6-alpine
+    environment:
+      POSTGRES_DB: mvp
+      POSTGRES_USER: mvp
+      POSTGRES_PASSWORD: mvp
+      TZ: Asia/Tokyo
+    ports:
+      - "127.0.0.1:5443:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mvp -d mvp"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
