@@ -32,6 +32,25 @@
    - http://127.0.0.1:8000/health/db → `{"db":"ok","result":1}`
    - http://127.0.0.1:8000/docs → API 목록
 
+## MCP (D5): 그래프가 직원 데이터를 읽는 길
+
+- 직원 데이터(희망 근무 등)는 그래프의 `collect`가 MCP 서버의 도구를 호출해서 읽는다. DB를 읽는 것은 MCP 서버 안에서만이다.
+- 파일
+  - `app/mcp/mcp_server.py` … MCP 서버. 도구는 `get_staff_availability` 하나뿐이다. 읽기만 하고, 쓰기 도구는 없다. 이름(`employees.name`)은 돌려주지 않는다.
+  - `app/mcp/mcp_client.py` … 그래프에서 도구를 호출하는 부품. LLM에게 보여 주는 도구는 `LLM_TOOLS`에 넣은 것뿐이다(지금은 비어 있음).
+- 도구 목록
+
+| 도구 | 건드리는 것 | 호출하는 쪽 | LLM에게 보여 주나 |
+|---|---|---|---|
+| `get_staff_availability` | DB(읽기만) | 코드(`collect`) | 보여 주지 않는다 |
+
+- 환경 변수 `STAFF_SOURCE` (`period_id`가 있을 때, 직원 데이터를 어디서 읽을지)
+  - `mcp`(기본) … MCP 서버를 거친다
+  - `db` … DB를 직접 읽는다 (결과는 `mcp`와 같다. `test_mcp.py`의 M5a에서 확인)
+- MCP 서버에는 `DATABASE_URL`만 넘긴다. `ANTHROPIC_API_KEY` 등은 넘기지 않는다.
+- `mcp` 패키지가 필요하다 (2.3.0에서 확인).
+- 테스트: `test\graph` 폴더에서 `python test_mcp.py` (환경 변수 `TEST_DATABASE_URL`이 필요하다. 없으면 SKIP하고 끝난다)
+
 ## 주의
 
 - DB 포트는 **5433**이다. (아즈키의 Windows에 PostgreSQL이 이미 5432를 쓰고 있었음)

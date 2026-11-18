@@ -52,6 +52,25 @@
 - 保留・後回しのAPIは入口だけあり、501を返す。廃止したAPIは410を返す。
 - グラフ（LangGraph）との接続口は `GraphGateway`。接続前は、編成開始APIが503を返す。
 
+## MCP（D5）：グラフが従業員データを読む道
+
+- 従業員データ（希望シフトなど）は、グラフの `collect` が、MCPサーバーの道具を呼んで読む。DBを読むのはMCPサーバーの中だけ。
+- ファイル
+  - `app/mcp/mcp_server.py` … MCPサーバー。道具は `get_staff_availability` の1つだけ。読むだけで、書き込みの道具は無い。名前（`employees.name`）は返さない。
+  - `app/mcp/mcp_client.py` … グラフから道具を呼ぶ部品。LLM に見せる道具は `LLM_TOOLS` に入れたものだけ（いまは空）。
+- 道具の一覧
+
+| 道具 | 触るもの | 呼ぶ人 | LLM に見せるか |
+|---|---|---|---|
+| `get_staff_availability` | DB（読むだけ） | コード（`collect`） | 見せない |
+
+- 環境変数 `STAFF_SOURCE`（`period_id` があるときの、従業員データの読み先）
+  - `mcp`（既定）… MCPサーバー経由
+  - `db` … DBを直接読む（結果は `mcp` と同じ。`test_mcp.py` の M5a で確認）
+- MCPサーバーには `DATABASE_URL` だけを渡す。`ANTHROPIC_API_KEY` などは渡さない。
+- `mcp` パッケージが必要（2.3.0 で確認）。
+- テスト: `test\graph` フォルダで `python test_mcp.py`（環境変数 `TEST_DATABASE_URL` が必要。無ければ SKIP して終わる）
+
 ## 注意
 
 - DBのポートは **5433**。（アズキのWindowsでは、PostgreSQLが既に5432を使っていたため）
