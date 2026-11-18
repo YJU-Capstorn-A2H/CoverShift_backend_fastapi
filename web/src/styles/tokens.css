@@ -18,41 +18,47 @@
    - 상태는 모양으로도: 필수 = 실선+모서리 삼각, 경고 = 점선. 색만으로 구분하지 않는다.
    - 키보드 초점은 어디서나 보이게. prefers-reduced-motion 존중. 모든 입력에 고정 id + label. */
 
+/* 2026-11-18 라이트 재조정 (요청: 「조금 밝게 + 고급스럽게」 → 차분한 미색 + 짙은 남색)
+   - 틀(frame) = 머리줄이 놓인 미색 바탕(--paper), 일하는 면 = 흰 종이(--panel) 한 장 (main 이 sheet, App.vue).
+   - 강조색 = 藍 대신 짙은 남색(hue ≈ 213, 보라·인디고 아님). 주 단추 · 선택 탭 밑줄 · 초점에만.
+   - 회색은 미색 쪽으로 살짝 따뜻하게. 글자 회색은 종이 · 미색 둘 다에서 4.5:1 이상.
+   - 다크 테마 값은 이번에 바꾸지 않았다. */
 :root {
   /* 이름 색 */
-  --paper: #f4f6fa;
-  --panel: #ffffff;
-  --ink: #1a1f2e;
-  --ink-soft: #566078;
-  --line: #d8dce7;
-  --ai: #3346a3; /* 藍 — 강조색 */
+  --paper: #f4f3ef; /* 미색 틀 — 노란 크림이 아니라 채도 낮은 뼈색(bone) */
+  --panel: #fefefc; /* 종이 */
+  --ink: #1b2331;
+  --ink-soft: #565d6b; /* 종이 위 6.6:1, 미색 위 6.0:1 */
+  --line: #e5e3dc;
+  --ai: #1f3a5f; /* 짙은 남색 — 강조색 */
 
   /* 이름 색에서 나온 단계 */
-  --panel-sunken: #eceff5;
-  --ink-faint: #8790a6;
-  --line-strong: #b2b9cb;
-  --ai-strong: #283889;
-  --ai-soft: #e5e9f8;
+  --panel-sunken: #f2f1ec;
+  --ink-faint: #6a6f7a; /* 종이 위 5.0:1, 미색 위 4.5:1 */
+  --line-strong: #cbc8bf;
+  --ai-strong: #152a46;
+  --ai-soft: #e9eef5;
   --on-ai: #ffffff;
-  --focus: #3346a3;
+  --focus: #1f3a5f;
 
   /* 의미 색 (강조색과 따로) */
   --required: #b42318;
-  --required-soft: #fdecea;
+  --required-soft: #fcece8;
   --warning: #8a5300;
   --warning-line: #cf8a00;
-  --warning-soft: #fff3db;
+  --warning-soft: #fdf3dd;
   --ok: #1f7a3a;
-  --ok-soft: #e5f3e9;
+  --ok-soft: #e7f2e8;
 
   /* 달력 (일본 관습: 土 파랑, 日・祝 빨강) */
   --sat: #1d5fc4;
-  --sat-soft: #ebf2fd;
+  --sat-soft: #edf2fa;
   --sun: #c0362c;
-  --sun-soft: #fcefee;
+  --sun-soft: #fbefeb;
 
-  --shadow-pop: 0 10px 30px rgb(20 28 60 / 0.16), 0 2px 6px rgb(20 28 60 / 0.08);
-  --backdrop: rgb(10 14 30 / 0.45);
+  --shadow-pop: 0 10px 30px rgb(40 34 22 / 0.14), 0 2px 6px rgb(40 34 22 / 0.07);
+  --backdrop: rgb(24 22 18 / 0.42);
+  --radius-sheet: 16px; /* 종이 한 장의 모서리 (틀 · 종이 · 카드 3단까지만) */
 
   /* 글꼴 */
   --font-body: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', 'Noto Sans KR', 'Yu Gothic UI', 'Meiryo', system-ui, sans-serif;
@@ -79,7 +85,7 @@
   --sp-6: 32px;
   --sp-7: 48px;
 
-  --radius: 6px;
+  --radius: 8px;
   --touch: 44px; /* 손가락 누름 최소 높이 */
 
   /* 근무표 */

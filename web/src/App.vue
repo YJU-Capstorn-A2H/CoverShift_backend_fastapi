@@ -101,8 +101,24 @@ const settingsActive = computed(() => route.path === '/settings' && route.query.
   padding-right: max(16px, env(safe-area-inset-right, 0px));
   min-width: 0;
 }
+/* 틀 + 종이: 머리줄은 미색 틀 위, 일하는 면은 흰 종이 한 장 (선 1px · 모서리 16px · 그림자 없음) */
 main {
   min-width: 0;
+  margin-block-end: var(--sp-2);
+  padding-inline: var(--sp-5);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sheet);
+}
+@media (max-width: 40rem) {
+  /* 휴대폰: 틀이 사라지고 종이가 곧 화면 */
+  main {
+    margin-block-end: 0;
+    margin-inline: calc(-1 * max(16px, env(safe-area-inset-left, 0px)));
+    padding-inline: max(16px, env(safe-area-inset-left, 0px));
+    border: 0;
+    border-radius: 0;
+  }
 }
 main:focus {
   outline: none;
@@ -126,7 +142,6 @@ main:focus {
   align-items: center;
   gap: var(--sp-2) var(--sp-5);
   padding-block: var(--sp-3);
-  border-bottom: 1px solid var(--line);
   min-width: 0;
 }
 .brand {
@@ -165,12 +180,14 @@ main:focus {
   text-decoration: none;
 }
 .nav-link:hover {
-  color: var(--ai);
-  background: var(--ai-soft);
-}
-.nav-link[aria-current='page'] {
   color: var(--ink);
   background: var(--panel-sunken);
+}
+/* 선택된 메뉴 = 종이와 같은 흰 조각 (색 강조 없이) */
+.nav-link[aria-current='page'] {
+  color: var(--ink);
+  background: var(--panel);
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 .prefs {
   display: flex;

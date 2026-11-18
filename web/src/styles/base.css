@@ -354,12 +354,11 @@ legend {
   text-align: start;
   vertical-align: middle;
 }
+/* 머리줄: 띠(채움) 없이 회색 작은 글자 + 아래 선 하나 */
 .table thead th {
-  background: var(--panel-sunken);
   color: var(--ink-soft);
   font-size: var(--fs-xs);
   font-weight: 600;
-  letter-spacing: 0.04em;
   white-space: nowrap;
 }
 .table tbody tr:last-child > * {
@@ -486,7 +485,7 @@ legend {
   padding: var(--sp-2) var(--sp-4);
   min-block-size: var(--touch);
   border: 0;
-  border-bottom: 3px solid transparent;
+  border-bottom: 2px solid transparent;
   background: none;
   color: var(--ink-soft);
   font: inherit;
