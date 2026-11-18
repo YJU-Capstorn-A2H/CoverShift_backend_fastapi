@@ -102,8 +102,8 @@ check("A: LLMは1回だけ(作り直しなし)", FakeLLM.call_count == 1)
 FakeLLM.call_count = 0
 path, state = run("B", ["断り", "不確か", "断り"])
 print(path)
-check("B: 3人に聞いて、manual_draft → approve に進む",
-      path.count("contact") == 3 and "manual_draft" in path and path[-1].startswith("止まる:approved"))
+check("B: 3人に聞いて、承認画面に進む(manual_draft は通らない)",
+      path.count("contact") == 3 and "manual_draft" not in path and path[-1].startswith("止まる:approved"))
 check("B: 記録は3件で、聞いた順は ID3, 4, 5",
       [log_item["staff_id"] for log_item in state.values["contact_log"]] == [3, 4, 5])
 check("B: 案は変わらない(誰も足されない)",

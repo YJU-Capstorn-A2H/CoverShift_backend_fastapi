@@ -1,33 +1,24 @@
 # routes.py -- 分岐だけを書くファイル。「次にどのノードへ行くか」を決める(処理の中身は graph.py)
-#   分岐は3つ: route_1 (2-2) / route_2 (2-6) / route_3 (2-10)
+#   分岐は2つ: route_2 (2-6) / route_3 (2-10)   (route_1 は、skill_check と一緒に B7 で削除した)
 from typing import Literal
 from langgraph.types import Command
 from settings import get_store, MANAGER_REQUEST_LIMIT
 from node.checks import all_dates, check_qualification, check_double_booking
 
 
-# 2-2) route_1 -- スキルチェックが必要か決める (collect の次)
-#   スキルと管理者評価が違う人がいる -> skill_check / 全員一致 -> auto_draft
-def route_1(state) -> Literal["skill_check", "auto_draft"]:
-    for staff in state["llm_all_staff"]:                         # 全員のデータを一人ずつ確認する
-        if staff["staff_skill"] != staff["admin_rate"]:          # スキルと管理者評価が一致しない場合は、スキルチェックが必要
-            return "skill_check"
-    return "auto_draft"                                          # スキルと管理者評価が一致する場合は、自動編成に進む
-
-
 # 2-6) route_2 -- validate の結果(result)で、次の行き先を決める (validate の次)
-#   valid -> approve / no_staff(人が足りない日) -> contact / retry -> auto_draft / limit_reached・その他 -> manual_draft
-def route_2(state) -> Literal["approve", "contact", "auto_draft", "manual_draft"]:
+#   valid -> approve / no_staff(人が足りない日) -> contact / retry -> auto_draft / limit_reached・その他 -> approve(店長が、問題を見ながら直す)
+def route_2(state) -> Literal["approve", "contact", "auto_draft"]:
     if state["result"] == "valid":
         return "approve"
     elif state["result"] == "no_staff":
         return "contact"
     elif state["result"] == "limit_reached":
-        return "manual_draft"
+        return "approve"
     elif state["result"] == "retry":
         return "auto_draft"
     else:
-        return "manual_draft"
+        return "approve"
 
 
 # 2-10) route_3 -- 店長の決定(decision)で、次の行き先を決める (approve の次)
