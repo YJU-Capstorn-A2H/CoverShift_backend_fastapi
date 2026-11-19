@@ -178,13 +178,26 @@ class AzukiGraph:
         return did
 
     def _confirm(self, values: dict, payload: dict) -> None:
+        """確定の保存(confirm_draft)と、従業員ごとの「確定しました」の仮LINE(승혁 の commit_notify と同じ。dedupe_key で、二重送信しない)。"""
         from app.repo import drafts as repo
 
+        period_id, did = values["period_id"], int(payload["draft_id"])
         waived = sorted({str(k) for k in payload.get("waived_keys") or [] if str(k).split("|")[0] not in _NON_WAIVABLE})
+        st = self._state_for(period_id)
+        month = st["period"]["target_month"][:7]
         with self._deps.connect() as conn:
-            repo.confirm_draft(conn, period_id=values["period_id"], draft_id=int(payload["draft_id"]),
-                               manager_id=int(payload["manager_id"]), waived_keys=waived)
-        log.info("azuki confirm period=%s draft_id=%s", values["period_id"], payload["draft_id"])
+            repo.confirm_draft(conn, period_id=period_id, draft_id=did, manager_id=int(payload["manager_id"]), waived_keys=waived)
+            rows = repo.load_assignments(conn, did)  # 通知は、DB に確定した、そのままの内容で
+            for e in st["llm_all_staff"]:
+                eid = e["employee_id"]
+                work = [{"work_date": r["work_date"], "start_time": r["start_time"], "end_time": r["end_time"]}
+                        for r in rows if r["employee_id"] == eid and r["kind"] == "work"]
+                leave = [r["work_date"] for r in rows if r["employee_id"] == eid and r["kind"] == "paid_leave"]
+                self._deps.send(conn, store_id=st["store_id"], employee_id=eid, kind="shift_confirmed",
+                                dedupe_key=f"confirm:{did}:{eid}",
+                                body={"text": f"{month} シフトが確定しました。出勤 {len(work)}日。", "draft_id": did,
+                                      "work_days": work, "paid_leave_days": leave})
+        log.info("azuki confirm period=%s draft_id=%s", period_id, did)
 
 
 def build_graph(checkpointer=None, deps=None):

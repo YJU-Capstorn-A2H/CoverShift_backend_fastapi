@@ -47,7 +47,7 @@ def api_seeded(clean_db, monkeypatch):
     from psycopg.rows import dict_row
     from fastapi.testclient import TestClient
 
-    from app.api.main import app
+    from app.api_seung.main import app
     from app.seed import seed_db
 
     with psycopg.connect(clean_db, row_factory=dict_row) as c:
