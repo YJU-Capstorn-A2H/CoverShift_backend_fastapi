@@ -6,6 +6,8 @@
 - Aegra 는 이 파일을 경로로 import 한다 → `app` 패키지가 sys.path 에 있어야 한다 (aegra.json "dependencies": ["."]).
 - 바깥 의존(LLM・검증)은 처음 부를 때 고른다 (app/graph/deps.py) → import 할 때 LLM 키가 없어도 서버는 뜬다.
 """
+from app.config import get_settings
 from app.graph.build import build_graph
 
+get_settings()  # 설정이 틀리면(예: LINE_MODE=line 인데 값이 빔) 편성 도중이 아니라 Aegra 가 이 파일을 읽을 때 ConfigError
 graph = build_graph()

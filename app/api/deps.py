@@ -46,6 +46,21 @@ Conn = Annotated[psycopg.Connection, Depends(get_conn, scope="function")]
 ComposerDep = Annotated[Any, Depends(get_composer)]
 
 
+# ---------------------------------------------------------------- LINE 스텁 전용 경로
+
+def stub_only() -> None:
+    """본문의 line_user_id 를 그대로 믿는 경로(POST /api/line/link · /api/line/reply)의 문지기 (G16).
+
+    LINE_MODE=stub 일 때만 연다. line 모드에서는 「없는 경로」와 같은 404 — 본인 확인은 서명을 검증하는
+    웹훅(POST /api/line/webhook)만 한다 (A-20). 「본문의 line_user_id 를 믿는 경로」를 여닫는 분기는 여기 한 곳이다.
+    """
+    if get_settings().line_mode != "stub":
+        raise ApiError(404, "NOT_FOUND", "찾을 수 없습니다")
+
+
+StubOnly = Depends(stub_only)
+
+
 # ---------------------------------------------------------------- 러너 (늦게 만든다)
 
 class LazyRunner:

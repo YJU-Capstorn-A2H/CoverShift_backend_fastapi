@@ -164,7 +164,7 @@ class ContextIndex:
         아즈키 max_headcount(시제품 447-465)와 같은 뜻:
         - 사원: 행 없음 = 배치 가능(G19). off · paid_leave = 불가. available · half_leave = 그 시각이 칸을 덮을 때만.
         - 파트・알바: available · half_leave 의 시각이 칸을 덮을 때만 (행 없음 = 불가, V9_ko 309).
-        아즈키와 다른 점: 시간대별 exclude(예 08~09시 薬剤師 제외)는 v17 표에 열이 없어서 보지 않는다.
+        아즈키와 다른 점: 시간대별 exclude(예 08~09시 薬剤師 제외)는 db/001 표에 열이 없어서 보지 않는다.
         틀 규칙 not_available 도 보지 않는다(희망만 본다) — 그만큼 「못 채움」으로 빠지는 칸이 적어진다(검사가 더 엄해지는 쪽).
         """
         n = 0

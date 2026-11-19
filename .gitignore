@@ -5,5 +5,3 @@ __pycache__/
 web/node_modules/
 web/dist/
 logs/
-.ruff_cache/
-.taste-skill/

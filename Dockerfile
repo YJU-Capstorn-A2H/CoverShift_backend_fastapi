@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-# CoverShift MVP 앱 이미지 1개 — compose.yaml 의 aegra(그래프 서버) · api(입구 API) 가 같이 쓴다 (D-1, V9_ko 507).
+# CoverShift MVP 앱 이미지 1개 — compose.yaml 의 aegra(그래프 서버) · api(입구 API) · line-dispatcher(LINE 발송기) 가 같이 쓴다 (D-1, V9_ko 507).
 # 버전 고정: 베이스 이미지 · uv 는 태그 고정, 파이썬 패키지는 uv.lock 그대로(--frozen). aegra-cli 0.10.8 은 pyproject 에 고정.
 # 빌드 맥락에서 빼는 것(.env · .venv 등)은 Dockerfile.dockerignore.
 

@@ -147,7 +147,8 @@ def confirm_draft(conn, *, period_id: int, draft_id: int, manager_id: int, waive
     """확정 저장 (V9_ko 88 commit_notify 앞부분). 다시 불러도 결과가 같다 (중단 뒤 노드 재실행 대비).
 
     1) shift_drafts: status='confirmed', confirmed_at/by (V9_ko 54 승인자 ID). 기간당 확정 1개는 DB 부분 유일 인덱스가 막는다.
-    2) validation_violations: 점장이 허용한 위반에 allowed_by/at (G4). 예외 불가 코드는 허용으로 쓰지 않는다 (V9_ko 479).
+    2) violation_waivers: 점장이 허용한 위반마다 1행 (allowed_by/at, G4). validation_violations 는 고치지 않는다 (추가 전용).
+       예외 불가 코드는 허용으로 쓰지 않는다 (V9_ko 479).
     3) manager_actions 'approved' — 같은 안에 두 번 들어가지 않는다 (one_approval_per_draft, V9_ko 505).
     """
     cur = conn.execute(
@@ -162,11 +163,14 @@ def confirm_draft(conn, *, period_id: int, draft_id: int, manager_id: int, waive
     waived = set(waived_keys)
     rows = conn.execute(
         """SELECT violation_id, check_code, work_date, employee_id, detail FROM validation_violations
-           WHERE draft_id = %s AND allowed_by IS NULL""", (draft_id,)).fetchall()
+           WHERE draft_id = %s""", (draft_id,)).fetchall()
     ids = [r["violation_id"] for r in rows if (kw := _row_key(r))[1] and kw[0] in waived]
     if ids:
-        conn.execute("UPDATE validation_violations SET allowed_by = %s, allowed_at = now() WHERE violation_id = ANY(%s)",
-                     (manager_id, ids))
+        # 위반 1건에 허용 1행 (PK = violation_id) — 이미 허용된 위반은 그대로 둔다. allowed_at 은 DB 기본값 now().
+        conn.execute(
+            """INSERT INTO violation_waivers (violation_id, allowed_by)
+               SELECT unnest(%s::bigint[]), %s
+               ON CONFLICT (violation_id) DO NOTHING""", (ids, manager_id))
     conn.execute(
         """INSERT INTO manager_actions (period_id, draft_id, manager_id, action) VALUES (%s, %s, %s, 'approved')
            ON CONFLICT (draft_id) WHERE action = 'approved' DO NOTHING""", (period_id, draft_id, manager_id))
@@ -175,17 +179,24 @@ def confirm_draft(conn, *, period_id: int, draft_id: int, manager_id: int, waive
 # ---------------------------------------------------------------- 직원 연락 (M-6, G8 — 기본 꺼 둠)
 
 
+def line_linked_employee_ids(conn, store_id: int) -> set[int]:
+    """LINE 이 연결된 직원들. 출근 요청은 이 사람들에게만 보낼 수 있다 (미연결이면 발송함에서 no_recipient 로 끝난다)."""
+    rows = conn.execute("SELECT employee_id FROM employees WHERE store_id = %s AND line_user_id IS NOT NULL",
+                        (store_id,)).fetchall()
+    return {row["employee_id"] for row in rows}
+
+
 def ask_contact(conn, *, period_id: int, employee_id: int, work_date: str, start_time: str, end_time: str) -> int:
-    """contact_log 에 질문 1건. 같은 (기간, 직원, 날짜, 시작) 이 이미 있으면 그 행의 contact_id (UNIQUE, db/002)."""
+    """contact_requests 에 질문 1건. 같은 (기간, 직원, 날짜, 시작) 이 이미 있으면 그 행의 contact_id (UNIQUE, db/002)."""
     r = conn.execute(
-        """INSERT INTO contact_log (period_id, employee_id, work_date, start_time, end_time)
+        """INSERT INTO contact_requests (period_id, employee_id, work_date, start_time, end_time)
            VALUES (%s, %s, %s, %s, %s)
            ON CONFLICT (period_id, employee_id, work_date, start_time) DO NOTHING RETURNING contact_id""",
         (period_id, employee_id, _d(work_date), _t(start_time), _t(end_time))).fetchone()
     if r is not None:
         return r["contact_id"]
     return conn.execute(
-        """SELECT contact_id FROM contact_log
+        """SELECT contact_id FROM contact_requests
            WHERE period_id = %s AND employee_id = %s AND work_date = %s AND start_time = %s""",
         (period_id, employee_id, _d(work_date), _t(start_time))).fetchone()["contact_id"]
 
@@ -194,5 +205,5 @@ def answer_contact(conn, *, contact_id: int, status: str) -> None:
     """답을 기록한다. 이미 답이 있으면 덮어쓰지 않는다 (먼저 온 답이 이긴다)."""
     if status not in ("accepted", "declined", "expired"):
         raise ValueError(status)
-    conn.execute("""UPDATE contact_log SET status = %s, answered_at = now()
+    conn.execute("""UPDATE contact_requests SET status = %s, answered_at = now()
                     WHERE contact_id = %s AND status = 'asked'""", (status, contact_id))

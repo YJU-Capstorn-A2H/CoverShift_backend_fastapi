@@ -19,6 +19,7 @@ dependencies = [
     "bcrypt>=4.2,<6",
     "mcp==2.3.0",
     "python-dotenv==1.2.3",
+    "httpx==0.28.1",  # LINE push (app/line_api.py). uv.lock 에 이미 잠겨 있던 버전 그대로
 ]
 
 [dependency-groups]

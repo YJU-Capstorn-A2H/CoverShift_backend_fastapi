@@ -1,4 +1,4 @@
-"""LINE 연결 토큰 · 발송함(스텁) · 직원 연락 기록 (A-13, A-17, M-5, G14, G16)."""
+"""LINE 연결 토큰 · 발송함 조회 · 직원 연락 기록 (A-13, A-17, M-5, G14, G16)."""
 from __future__ import annotations
 
 import secrets
@@ -36,8 +36,10 @@ def link(conn: psycopg.Connection, employee_id: int, line_user_id: str) -> None:
 
 
 def outbox(conn: psycopg.Connection, store_id: int, employee_id: int | None) -> list[dict]:
-    """발송함 (A-17, W-8). 최신 순. employee_id 가 NULL 인 행은 점장 앞 (db/002)."""
-    q = """SELECT o.message_id, o.employee_id, e.name AS employee_name, e.line_user_id, o.kind, o.body, o.created_at
+    """발송함 (A-17, W-8). 최신 순. employee_id 가 NULL 인 행은 점장 앞 (db/002).
+    status · attempts · sent_at · last_error = 발송기가 적은 발송 결과 (A-21)."""
+    q = """SELECT o.message_id, o.employee_id, e.name AS employee_name, e.line_user_id, o.kind, o.body, o.created_at,
+                  o.status, o.attempts, o.sent_at, o.last_error
            FROM line_outbox o LEFT JOIN employees e ON e.employee_id = o.employee_id
            WHERE o.store_id = %s"""
     args: list = [store_id]
@@ -50,11 +52,11 @@ def outbox(conn: psycopg.Connection, store_id: int, employee_id: int | None) -> 
 def contact_for_reply(conn: psycopg.Connection, contact_id: int) -> dict | None:
     """답장 버튼(G16): 연락 행 + 그 직원의 line_user_id + 기간의 thread_id.
 
-    행 잠금(FOR UPDATE)은 걸지 않는다: resume 뒤 그래프가 같은 contact_log 행을 고칠 수 있어 서로 기다릴 수 있다.
+    행 잠금(FOR UPDATE)은 걸지 않는다: resume 뒤 그래프가 같은 contact_requests 행을 고칠 수 있어 서로 기다릴 수 있다.
     겹침은 입구 잠금(app/api/deps.entrance_lock)과 러너 Busy 가 막는다.
     """
     return conn.execute(
         """SELECT c.contact_id, c.period_id, c.employee_id, c.status, e.line_user_id, p.thread_id
-           FROM contact_log c JOIN employees e ON e.employee_id = c.employee_id
-                              JOIN shift_periods p ON p.period_id = c.period_id
+           FROM contact_requests c JOIN employees e ON e.employee_id = c.employee_id
+                                   JOIN shift_periods p ON p.period_id = c.period_id
            WHERE c.contact_id = %s""", (contact_id,)).fetchone()

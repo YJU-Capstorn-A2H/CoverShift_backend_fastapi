@@ -141,6 +141,8 @@ def api(clean_db, monkeypatch) -> Api:
     monkeypatch.setenv("JWT_TTL_MINUTES", "60")
     monkeypatch.setenv("PUBLIC_BASE_URL", "http://web.test")
     monkeypatch.delenv("DEV_SKIP_AUTH", raising=False)
+    for name in ("LINE_MODE", "LINE_CHANNEL_SECRET", "LINE_CHANNEL_ACCESS_TOKEN", "LINE_OFFICIAL_ACCOUNT_ID"):
+        monkeypatch.delenv(name, raising=False)  # 기본 = stub. 셸에 남은 값이 시험을 line 모드로 돌리지 않게
     monkeypatch.setattr(managers, "BCRYPT_ROUNDS", 4)
     monkeypatch.setattr(managers, "_dummy_hash", None)
     runner, composer = FakeRunner(), FakeComposer()
@@ -160,3 +162,18 @@ def two_stores(api: Api) -> Api:
     api.make_store("B", "다른점", "b@store.test")
     return api
 
+
+@pytest.fixture
+def contact(two_stores: Api) -> Api:
+    """점포 A 의 직원 1명(LINE 'U-me' 연결)에게 출근 요청 1건이 나가 있고, 그래프가 그 답을 기다린다."""
+    api = two_stores
+    h = api.stores["A"]["h"]
+    api.eid = api.employee(h)
+    api.sql("UPDATE employees SET line_user_id = 'U-me' WHERE employee_id = %s", (api.eid,))
+    api.pid = api.period(h)
+    api.c.post(f"/api/shift-periods/{api.pid}/start-now", headers=h)
+    api.cid = api.sql("""INSERT INTO contact_requests (period_id, employee_id, work_date, start_time, end_time)
+                         VALUES (%s, %s, '2026-12-01', '09:00', '13:00') RETURNING contact_id""",
+                      (api.pid, api.eid))[0]["contact_id"]
+    api.runner.wait_contact(api.pid, api.cid)
+    return api

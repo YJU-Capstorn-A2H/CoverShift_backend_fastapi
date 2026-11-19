@@ -1,7 +1,7 @@
 """시연 데이터 (가정 G20): 아즈키 staff_data.json(11/04, 2026-11 한 달) + 시제품 STORE_SETTINGS[101].
 
 - load_azuki_context(): DB 없이 PeriodContext 를 만든다 (ID = 아즈키 staff_id). 검증 테스트용.
-- seed_db(): 같은 내용을 DB 에 넣는다 (v17 DDL 의 CHECK 를 전부 지키는 값으로). 이름은 원본의 더미 이름(Aさん 등).
+- seed_db(): 같은 내용을 DB 에 넣는다 (db/001 의 CHECK 를 전부 지키는 값으로). 이름은 원본의 더미 이름(Aさん 등).
 - CLI: `uv run python -m app.seed --email demo@example.com --password-stdin`  (DATABASE_URL 은 app.config)
   비밀번호는 표준 입력으로만 받는다 (명령줄 인자로 받으면 셸 기록에 남는다). 출력에 비밀번호・접속 문자열을 쓰지 않는다.
 
@@ -10,7 +10,7 @@
 - 근무 시간 08:00~22:30 = 영업 09:00~22:00 + 준비 60분 + 마감 30분 (prep_before · close_after). V9_ko 468 의 08:00~22:30 과 같다.
 - 최소 인원: 08:00~09:00 3명, 09:00~13:00 4명 (want 5).
 - 자격자: 「登録販売者(管理者)」「薬剤師」 08:00~22:30 1명 이상 → 모든 시간대 min_qualified = 1.
-옮기지 못한 것 (v17 표에 열이 없음):
+옮기지 못한 것 (db/001 표에 열이 없음):
 - 08:00~09:00 의 exclude ["薬剤師"] (그 시간대 인원에 약사를 세지 않음) → 세게 된다.
 - 09:00~13:00 의 want 5 → 余り(V-10)의 want 는 G3 대로 min_headcount(4)를 쓴다.
 """

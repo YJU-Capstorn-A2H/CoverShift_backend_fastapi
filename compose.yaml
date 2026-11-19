@@ -1,4 +1,4 @@
-# CoverShift MVP 시연 스택 (D-1, V9_ko 506-511): Postgres + Aegra(그래프) + 입구 API + 화면.
+# CoverShift MVP 시연 스택 (D-1, V9_ko 506-511): Postgres + Aegra(그래프) + 입구 API + LINE 발송기 + 화면.
 #
 #   띄우기   docker compose -f compose.yaml -p mvp-demo up -d --build --wait
 #   상태     docker compose -p mvp-demo ps
@@ -24,8 +24,8 @@ x-app-build: &app-build
     db:
       condition: service_healthy
 
-# api 와 aegra(그래프 노드가 도는 곳)가 같이 쓰는 설정. 앱 DB 와 Aegra 표 · 체크포인트는 같은 DB 를 쓴다
-# (Aegra 도 DATABASE_URL 을 읽기 때문 — 이름이 겹치는 표는 없음: Aegra = assistant · thread · runs · checkpoints …, 앱 = 18개).
+# api · aegra(그래프 노드가 도는 곳) · line-dispatcher 가 같이 쓰는 설정. 앱 DB 와 Aegra 표 · 체크포인트는 같은 DB 를 쓴다
+# (Aegra 도 DATABASE_URL 을 읽기 때문 — 이름이 겹치는 표는 없음: Aegra = assistant · thread · runs · checkpoints …, 앱 = 17개).
 # 비밀번호에 @ / # % 같은 글자가 있으면 URL 인코딩해서 넣는다.
 x-app-env: &app-env
   DATABASE_URL: postgresql://${POSTGRES_USER:-covershift}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 를 .env 에 넣는다}@db:5432/${POSTGRES_DB:-covershift}
@@ -43,6 +43,12 @@ x-app-env: &app-env
   ENABLE_CONTACT: ${ENABLE_CONTACT:-false}
   PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://127.0.0.1:5173}
   MCP_MODE: ${MCP_MODE:-stdio}   # collect 가 직원 정보를 MCP(stdio)로 읽는다 (M-7, G7 · app/graph/deps.py)
+  # LINE (A-20 ~ A-22). stub = 보내지 않고 기록만. line 이면 아래 세 값이 하나라도 비어 있을 때 api · 발송기가 시작하지 않고,
+  # aegra 는 그래프 파일(app/graph/aegra_entry.py)을 읽다가 같은 오류를 낸다 (app/config.py ConfigError)
+  LINE_MODE: ${LINE_MODE:-stub}
+  LINE_CHANNEL_SECRET: ${LINE_CHANNEL_SECRET:-}
+  LINE_CHANNEL_ACCESS_TOKEN: ${LINE_CHANNEL_ACCESS_TOKEN:-}
+  LINE_OFFICIAL_ACCOUNT_ID: ${LINE_OFFICIAL_ACCOUNT_ID:-}
 
 services:
   db:
@@ -57,7 +63,7 @@ services:
       - "127.0.0.1:5444:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # 볼륨이 비어 있을 때 한 번만 이름 순서로 적용 (001 = 명세 v17, 002 = (가정) 추가 표). 이미 데이터가 있으면 다시 돌지 않는다
+      # 볼륨이 비어 있을 때 한 번만 이름 순서로 적용 (001 = 추천안, 002 = 로컬 mvp 가 쓰는 추가 표). 이미 데이터가 있으면 다시 돌지 않는다
       - ./db:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
@@ -79,7 +85,7 @@ services:
       ENV_MODE: LOCAL
       LOG_LEVEL: ${AEGRA_LOG_LEVEL:-INFO}
     ports:
-      - "127.0.0.1:2026:2026"
+      - "127.0.0.1:${AEGRA_HOST_PORT:-2026}:2026"   # 호스트 쪽 포트만 바꾼다 (2026 을 다른 프로젝트가 쓰고 있을 때). api 는 컨테이너망 aegra:2026 으로 붙는다
     volumes:
       - llm-logs:/app/logs            # LLM 측정 기록 (편성 호출은 이 서비스에서 일어난다) — 리뷰 A D1
     healthcheck:
@@ -115,6 +121,16 @@ services:
       timeout: 5s
       retries: 20
       start_period: 5s
+
+  # line_outbox 의 「대기」 행을 한 건씩 보낸다 (A-21). 포트를 열지 않는다. 여러 개 띄워도 같은 행을 두 번 보내지 않는다
+  line-dispatcher:
+    <<: *app-build
+    command: ["python", "-m", "app.line_dispatcher"]
+    # SIGTERM 을 받으면 보내던 한 건을 마치고 끝난다. push 한 번은 최악 약 24초(연결 · 보내기 · 받기 각 8초, app/line_api.py)
+    # → 그보다 길게 기다린다. 기본값(10초)이면 보내는 도중 SIGKILL 될 수 있다 (그래도 행은 pending 으로 남아 다시 나간다)
+    stop_grace_period: 40s
+    environment:
+      <<: *app-env
 
   web:
     build:

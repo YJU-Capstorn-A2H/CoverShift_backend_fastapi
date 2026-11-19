@@ -10,7 +10,7 @@
 - 측정 기록: `../experiments/2026-11-07_azuki_mix/RESULTS.md` (Sonnet 5.5 · 생각 설정 안 줌 · JSON 고정 → 1회차 필수 위반 0, 3.2분 · $0.36, n=1).
 
 ## 고치면 안 되는 파일 (메인 세션 소유)
-`app/domain.py` `app/config.py` `app/db.py` `app/line_stub.py` `app/mcp_tools.py` `tests/conftest.py` `tests/test_harness.py`
+`app/domain.py` `app/config.py` `app/db.py` `app/line_outbox.py` `app/mcp_tools.py` `tests/conftest.py` `tests/test_harness.py`
 `db/*.sql` `pyproject.toml` `uv.lock` `REQUIREMENTS.md` `ASSUMPTIONS.md` `API_CONTRACT.md` `harness/*` `tools/*`
 바꿔야 하면 고치지 말고 보고서 「계약 변경 요청」에 쓴다. 새 패키지가 필요해도 같다 (pyproject 를 고치지 않는다).
 
@@ -18,7 +18,7 @@
 - `.env` 를 읽지 않는다 (어떤 명령으로도). 키 · 비밀번호 값을 출력하지 않는다.
 - 진짜 LLM 을 부르지 않는다 (ANTHROPIC_API_KEY 를 쓰는 코드는 `@pytest.mark.llm` 테스트에만, 실행하지 않는다).
 - 배포 · 외부 서버 · 클라우드 조작 금지. `git` 명령 불필요.
-- Docker: 시험 DB `mvp-test` 를 내리거나 지우지 않는다. 5433 · 5441 포트의 기존 DB 에 접속하지 않는다. `down -v`, `volume rm` 금지.
+- Docker: 시험 DB `mvp-test`(5443) 를 내리거나 지우지 않는다. 5433 · 5441 포트의 기존 DB 에 접속하지 않는다. `down -v`, `volume rm` 금지.
 - 맡지 않은 폴더의 파일을 만들거나 고치지 않는다. 다른 에이전트가 같은 시간에 옆 폴더를 쓰고 있다.
 
 ## 실행

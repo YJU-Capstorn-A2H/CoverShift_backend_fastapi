@@ -42,8 +42,8 @@
 | 메서드 · 경로 | 요청 / 응답 |
 |---|---|
 | POST /api/employees/{id}/link-token | → 200 `{link_url, expires_at}` (line_outbox 에 `link_token` 기록) / 409 `LINE_ALREADY_LINKED` |
-| POST /api/line/link | `{link_token, line_user_id}` → 200 `{employee_id}` / 400 `INVALID_TOKEN` / 409 `LINE_ALREADY_LINKED` |
-| POST /api/shift-periods/{id}/submission-links | → 200 `{links: [{employee_id, url}], sent}` (있으면 같은 링크, line_outbox `submission_link`) |
+| POST /api/line/link | **`LINE_MODE=stub` 전용** (line 모드 404). `{link_token, line_user_id}` → 200 `{employee_id}` / 400 `INVALID_TOKEN` / 409 `LINE_ALREADY_LINKED` |
+| POST /api/shift-periods/{id}/submission-links | → 200 `{links: [{employee_id, url}], sent}` (있으면 같은 링크. `sent` = 이번 호출이 발송함에 새로 적은 `submission_link` 건수 — 실제 발송은 발송기가 한다) |
 | GET /api/submit/{token} | → 200 `{employee_name, is_regular, target_month, submission_deadline, off_request_limit, work_request_limit, items: [...]}` / 404 `NOT_FOUND` / 410 `SUBMISSION_CLOSED` |
 | PUT /api/submit/{token}/availability | `{items: [{work_date, kind, start_time?, end_time?}]}` → 200 `{items}` (그 날짜만 UPSERT) / 410 / 422 `LIMIT_EXCEEDED` · `INVALID_ITEM` |
 | DELETE /api/submit/{token}/availability/{work_date} | → 204 |
@@ -96,14 +96,20 @@ Draft = {
 }
 ```
 
-## LINE 스텁 · 직원 답장 (M-5, M-6, A-17, W-8, G16)
+## LINE 발송함 · 직원 답장 · 웹훅 (M-5, M-6, A-17, A-20 ~ A-22, W-8, G16, G24)
 
 | 메서드 · 경로 | 요청 / 응답 |
 |---|---|
-| GET /api/dev/line-outbox?employee_id= | 관리자 JWT → 200 `[{message_id, employee_id, employee_name, kind, body, created_at}]` (최신 순) |
-| POST /api/line/reply | `{contact_id, line_user_id, answer: "yes"|"no"}` → 202 `RunStatus` / 403 `NOT_YOUR_CONTACT` / 409 `BUSY` / 409 `ALREADY_ANSWERED` |
+| GET /api/dev/line-outbox?employee_id= | 관리자 JWT → 200 `[{message_id, employee_id, employee_name, kind, body, created_at, status, attempts, sent_at, last_error}]` (최신 순) |
+| POST /api/line/reply | **`LINE_MODE=stub` 전용** (line 모드 404). `{contact_id, line_user_id, answer: "yes"|"no"}` → 202 `RunStatus` / 403 `NOT_YOUR_CONTACT` / 409 `BUSY` / 409 `ALREADY_ANSWERED` |
+| POST /api/line/webhook | LINE 플랫폼이 부른다. JWT 없음. 헤더 `x-line-signature` = 채널 시크릿으로 **본문 원문**을 HMAC-SHA256 → base64. 본문 `{destination, events: [...]}` → 200 `{}` (이벤트 0개 포함. 영구 거절은 로그만) / 503 `TRY_AGAIN` (이벤트 중 하나라도 일시 장애 — 나머지는 처리됨. LINE 이 다시 보내게 한다) / 401 `INVALID_SIGNATURE` (이벤트를 하나도 처리하지 않음) / 400 `INVALID_WEBHOOK` / 413 `PAYLOAD_TOO_LARGE` (본문 1MiB 초과) |
 
 `body` 예: 확정 통지 `{"text": "...", "work_days": [...]}`, 연락 `{"text": "...", "contact_id": 3, "buttons": ["yes","no"]}`.
+
+발송 상태 `status` (A-21): `pending` 대기 → `sent` 보냄 / `failed` 실패 / `no_recipient` 보낼 곳 없음(LINE 미연결 · 점장 앞). `attempts` = 발송 시도 횟수(기록용), `sent_at` = 보낸 시점(보내기 전 null), `last_error` = 마지막 오류(상태 코드 + 짧은 문장, 없으면 null). `failed` 는 재시도 기한(6시간)이 지났거나 다시 보내도 같은 오류 — 발송기는 더 보지 않는다(`ops/requeue_line.py` 로 되돌린다). API · 그래프는 `pending` 으로 적기만 하고, 발송기(`python -m app.line_dispatcher`)가 보낸다.
+
+웹훅이 받는 이벤트 (A-20): `postback` 의 `postback.data = "contact:{contact_id}:{yes|no}"` → 보낸 사람(`source.userId`)이 그 연락의 직원이면 `POST /api/line/reply` 와 같은 처리 · `message`(text) 의 내용이 유효한 연결 토큰 → 보낸 사람을 그 직원에 연결 (G24). `mode: "standby"` 와 그 밖의 타입은 건너뛴다.
+LINE 연결 링크: `LINE_OFFICIAL_ACCOUNT_ID` 가 있으면 `https://line.me/R/oaMessage/{LINE ID}/?{token}` (`LINE_MODE=line` 에서는 필수), 비어 있으면 `{PUBLIC_BASE_URL}/line/link/{token}`.
 
 ## 러너 계약 (api ↔ runtime, Python)
 

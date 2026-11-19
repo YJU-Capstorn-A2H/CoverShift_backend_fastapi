@@ -226,6 +226,9 @@ def test_get_draft_returns_names_for_manager_and_violation_keys_match_domain(sta
                        '{"time": "18:00", "need": 3, "have": 2, "rule_key": "r2"}'),
                       (%s, 'OUTSIDE_AVAILABILITY', '2026-12-01', %s, '{"kind": "part"}')""",
             (did, did, did, did, e2))
+    m = api.stores["A"]["manager_id"]
+    api.sql("""INSERT INTO violation_waivers (violation_id, allowed_by)
+               SELECT violation_id, %s FROM validation_violations WHERE check_code = 'OUTSIDE_AVAILABILITY'""", (m,))
     d = api.c.get(f"/api/drafts/{did}", headers=api.h).json()
     assert {k: d[k] for k in ("draft_id", "period_id", "status", "parent_draft_id", "confirmed_at",
                               "confirmed_by")} == {"draft_id": did, "period_id": api.pid, "status": "draft",
@@ -243,6 +246,9 @@ def test_get_draft_returns_names_for_manager_and_violation_keys_match_domain(sta
     assert v[2]["key"].endswith("|r2") and v[3]["employee_id"] == e2 and v[3]["waivable"] is True
     assert set(v[0]) == {"key", "check_code", "severity", "waivable", "work_date", "employee_id", "detail",
                          "allowed_by", "allowed_at"}
+    # 허용은 violation_waivers 에서 온다: 허용한 위반에만 값이 있고, 나머지는 null
+    assert v[3]["allowed_by"] == m and v[3]["allowed_at"] is not None
+    assert [(x["allowed_by"], x["allowed_at"]) for x in v[:3]] == [(None, None)] * 3
     assert err(api.c.get("/api/drafts/9999", headers=api.h)) == (404, "NOT_FOUND")
 
 

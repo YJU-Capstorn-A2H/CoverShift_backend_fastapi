@@ -58,25 +58,12 @@ def test_outbox_needs_manager_newest_first_and_is_scoped_to_store(two_stores):
     api.c.post(f"/api/employees/{e2}/link-token", headers=ha)
     box = api.c.get("/api/dev/line-outbox", headers=ha).json()
     assert [m["employee_id"] for m in box] == [e2, e1]  # 최신 순
-    assert set(box[0]) == {"message_id", "employee_id", "employee_name", "line_user_id", "kind", "body", "created_at"}
+    assert set(box[0]) == {"message_id", "employee_id", "employee_name", "line_user_id", "kind", "body", "created_at",
+                           "status", "attempts", "sent_at", "last_error"}
+    assert (box[0]["status"], box[0]["attempts"], box[0]["sent_at"], box[0]["last_error"]) == ("pending", 0, None, None)
     assert [m["employee_id"] for m in api.c.get(f"/api/dev/line-outbox?employee_id={e1}", headers=ha).json()] == [e1]
     assert api.c.get("/api/dev/line-outbox", headers=hb).json() == []
     assert err(api.c.get("/api/dev/line-outbox")) == (401, "UNAUTHORIZED")
-
-
-@pytest.fixture
-def contact(two_stores):
-    api = two_stores
-    h = api.stores["A"]["h"]
-    api.eid = api.employee(h)
-    api.sql("UPDATE employees SET line_user_id = 'U-me' WHERE employee_id = %s", (api.eid,))
-    api.pid = api.period(h)
-    api.c.post(f"/api/shift-periods/{api.pid}/start-now", headers=h)
-    api.cid = api.sql("""INSERT INTO contact_log (period_id, employee_id, work_date, start_time, end_time)
-                         VALUES (%s, %s, '2026-12-01', '09:00', '13:00') RETURNING contact_id""",
-                      (api.pid, api.eid))[0]["contact_id"]
-    api.runner.wait_contact(api.pid, api.cid)
-    return api
 
 
 @pytest.mark.req("M-5")
@@ -103,7 +90,7 @@ def test_reply_rejects_other_person_unknown_contact_answered_and_not_waiting(con
     api.runner.raise_on["resume"] = Busy()
     r = api.c.post("/api/line/reply", json={"contact_id": api.cid, "line_user_id": "U-me", "answer": "no"})
     assert err(r) == (409, "BUSY") and r.json()["error"]["message"] == BUSY_MESSAGE
-    api.sql("UPDATE contact_log SET status = 'accepted', answered_at = now()")
+    api.sql("UPDATE contact_requests SET status = 'accepted', answered_at = now()")
     assert err(api.c.post("/api/line/reply", json={"contact_id": api.cid, "line_user_id": "U-me",
                                                    "answer": "no"})) == (409, "ALREADY_ANSWERED")
     assert api.runner.names().count("resume") == 1  # 러너까지 간 것은 Busy 를 낸 1번뿐

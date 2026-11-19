@@ -1,21 +1,25 @@
 """입구 API (D3, V9_ko 508). 실행: uv run uvicorn app.api.main:app --host 127.0.0.1 --port 8010
 
-관리자 Web · 직원 제출 페이지 · 답장 버튼의 요청을 받아 DB 를 읽고 쓰고, 편성은 러너(app/runner.py)에 넘긴다.
+관리자 Web · 직원 제출 페이지 · 답장 버튼 · LINE 웹훅의 요청을 받아 DB 를 읽고 쓰고, 편성은 러너(app/runner.py)에 넘긴다.
 """
 from __future__ import annotations
 
 from fastapi import FastAPI, Request
+
+from app.config import get_settings
 
 from . import errors
 from .deps import AlreadyStarted, Busy, NotWaiting, StaleDraft
 from .routes_auth import router as auth_router
 from .routes_control import router as control_router
 from .routes_instructions import router as instructions_router
+from .routes_line_webhook import router as line_webhook_router
 from .routes_settings import router as settings_router
 from .routes_submit import router as submit_router
 
 
 def create_app() -> FastAPI:
+    get_settings()  # 설정이 틀리면(예: LINE_MODE=line 인데 시크릿이 빔) 요청을 받기 전에 ConfigError 로 멈춘다
     app = FastAPI(title="CoverShift MVP 입구 API", version="0.1.0")
     errors.install(app)
 
@@ -36,7 +40,8 @@ def create_app() -> FastAPI:
     async def _already(_: Request, e: Exception):
         return errors.error_response(409, "ALREADY_STARTED", "이 기간은 이미 편성을 시작했습니다")
 
-    for r in (auth_router, settings_router, submit_router, instructions_router, control_router):
+    for r in (auth_router, settings_router, submit_router, instructions_router, control_router,
+              line_webhook_router):
         app.include_router(r)
     return app
 

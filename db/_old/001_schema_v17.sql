@@ -174,8 +174,8 @@ CREATE TABLE tasks (
 );
 -- 11) 誰がどの業務を一人でできるか【管理者が確認して確定した結果】（行がある = できる。行がない = 数えない）
 -- 11) 누가 어느 업무를 혼자 할 수 있는가【관리자가 확인해서 확정한 결과】(행 있음 = 가능. 행 없음 = 세지 않음)
---     validateが信頼するのはこの表だけ。評価（自己・他己）は下の evaluations に溜めて、管理者が見て確定する
---    validate가 신뢰하는 것은 이 표뿐. 평가(자기・타인)는 아래 evaluations에 모아 두고 관리자가 보고 확정한다
+--     validateが信頼するのはこの表だけ。判定は店長だけが決める（自己評価・他己評価の表は 11/18 に削除）
+--    validate가 신뢰하는 것은 이 표뿐. 판정은 점장만 정한다(자기・타인 평가 표는 11/18 삭제, decision-log 10/27 「자기평가 완전 제외」)
 -- [印] 나중(12/4 이후). 기준 문서에 없음, 요확인  / 後回し（12/4以降）。基準文書に無い、要確認
 CREATE TABLE employee_skills (
     employee_id  BIGINT NOT NULL REFERENCES employees(employee_id),
@@ -191,28 +191,8 @@ CREATE TABLE store_task_needs (
     min_people  SMALLINT NOT NULL CHECK (min_people >= 1),
     PRIMARY KEY (rule_id, task_id)
 );
--- 13) 業務ごとの評価（自己評価と他己評価）
--- 13) 업무별 평가(자기 평가와 타인 평가)
---     自己評価: evaluator_id = employee_id（日付なし）
---    자기 평가: evaluator_id = employee_id(날짜 없음)
---     他己評価: 一緒に勤務した社員が付ける（work_date = 一緒に勤務した日）
---    타인 평가: 함께 근무한 정직원이 매긴다(work_date = 함께 근무한 날)
--- [印] 나중(12/4 이후). 기준 문서에 없음, 요확인  / 後回し（12/4以降）。基準文書に無い、要確認
-CREATE TABLE evaluations (
-    evaluation_id  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    employee_id    BIGINT NOT NULL REFERENCES employees(employee_id),             -- 評価される人  / 평가받는 사람
-    task_id        BIGINT NOT NULL REFERENCES tasks(task_id) ON DELETE CASCADE,
-    evaluator_id   BIGINT NOT NULL REFERENCES employees(employee_id),             -- 評価する人  / 평가하는 사람
-    rating         TEXT   NOT NULL CHECK (rating IN ('solo','guided')),           -- solo=一人でできる / guided=指導が必要  / solo=혼자 가능 / guided=지도 필요
-    work_date      DATE,
-    CHECK ((evaluator_id = employee_id) = (work_date IS NULL))
-);
--- 自己評価は 人×業務 で1つ（書き直しは上書き）
--- 자기 평가는 사람×업무로 1개(다시 쓰면 덮어쓰기)
-CREATE UNIQUE INDEX one_self_evaluation ON evaluations(employee_id, task_id) WHERE evaluator_id = employee_id;
--- 他己評価は 同じ評価者が、同じ日に、同じ人の同じ業務を2回つけられない
--- 타인 평가는 같은 평가자가 같은 날 같은 사람의 같은 업무를 2번 매길 수 없다
-CREATE UNIQUE INDEX one_other_evaluation ON evaluations(employee_id, task_id, evaluator_id, work_date) WHERE evaluator_id <> employee_id;
+-- 13) （削除 11/18）業務ごとの評価 evaluations — 自己評価廃止（10/27）。他己評価も持たない
+-- 13) (삭제 11/18) 업무별 평가 evaluations — 자기평가 폐지(10/27). 타인평가도 두지 않는다
 -- 14) 検証で引っかかった内容（1件1行で溜める。次の作り直しにAIへ渡す「コメント」の元にもなる）
 -- 14) 검증에서 걸린 내용(1건 1행으로 쌓는다. 다음 재작성 때 AI에 넘기는 「코멘트」의 바탕도 된다)
 --     コメントの文章は保存せず、check_code と detail からコードで作る（同じ指摘は同じ文章になる）

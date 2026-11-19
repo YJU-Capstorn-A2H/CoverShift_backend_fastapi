@@ -1,6 +1,6 @@
 """MCP 읽기 도구의 본체 (M-7, A-18). 메인 세션 소유. MCP 서버(app/mcp_server.py)는 이 함수를 감싸기만 한다.
 
-- 이름 열을 읽지 못하는 DB 롤(covershift_llm_read, db/002)로 SET ROLE 한 뒤 읽는다 → 실수로 name 을 SELECT 하면 DB 가 거부.
+- 이름 열을 읽지 못하는 DB 롤(covershift_llm_read, db/001)로 SET ROLE 한 뒤 읽는다 → 실수로 name 을 SELECT 하면 DB 가 거부.
 - 돌려주는 값은 JSON 으로 바꿀 수 있는 dict 만. staff_info_to_domain() 으로 domain 형으로 바꾼다.
 """
 from __future__ import annotations

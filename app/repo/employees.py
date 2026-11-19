@@ -76,5 +76,5 @@ def update_task(conn: psycopg.Connection, store_id: int, task_id: int, fields: d
 
 
 def delete_task(conn: psycopg.Connection, store_id: int, task_id: int) -> bool:
-    """employee_skills · store_task_needs · evaluations 는 CASCADE (V9_ko 184)."""
+    """tasks 를 참조하는 표는 없다 (employee_skills · store_task_needs · evaluations 는 추천안에서 삭제, db/001)."""
     return conn.execute("DELETE FROM tasks WHERE store_id = %s AND task_id = %s", (store_id, task_id)).rowcount == 1

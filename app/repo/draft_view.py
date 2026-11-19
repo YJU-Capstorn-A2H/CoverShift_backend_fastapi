@@ -10,7 +10,7 @@ from app.domain import Violation
 
 
 def severity_of(check_code: str, detail: dict, stored: str | None = None) -> str:
-    """validation_violations 에 severity 열이 없다 (db/001). 그래프가 detail["severity"] 를 넣었으면 그 값을 쓴다.
+    """validation_violations.severity (db/001, NULL 허용) 에 저장된 값이 있으면 그 값, 없으면 detail["severity"] 를 쓴다.
 
     없으면 REQUIREMENTS.md V 표에서 정한다 (가정 신규 — 「계약 변경 요청」에 올림):
     - HEADCOUNT_SHORTAGE: 지시 틀(detail.rule_key) 칸 = required, 설정값 칸 = warning (V-9, V9_ko 476 · 514)
@@ -39,9 +39,11 @@ def get_draft(conn: psycopg.Connection, store_id: int, draft_id: int) -> dict | 
                   a.break_start, a.break_end
            FROM shift_assignments a JOIN employees e ON e.employee_id = a.employee_id
            WHERE a.draft_id = %s ORDER BY a.work_date, a.employee_id""", (draft_id,)).fetchall()
+    # 허용은 violation_waivers 에 따로 있다. 허용 행이 없는 위반은 allowed_by · allowed_at 이 NULL 로 나온다
     rows = conn.execute(
-        """SELECT check_code, work_date, employee_id, detail, severity, allowed_by, allowed_at
-           FROM validation_violations WHERE draft_id = %s ORDER BY violation_id""", (draft_id,)).fetchall()
+        """SELECT v.check_code, v.work_date, v.employee_id, v.detail, v.severity, w.allowed_by, w.allowed_at
+           FROM validation_violations v LEFT JOIN violation_waivers w ON w.violation_id = v.violation_id
+           WHERE v.draft_id = %s ORDER BY v.violation_id""", (draft_id,)).fetchall()
     violations = []
     for r in rows:
         detail = r["detail"] or {}

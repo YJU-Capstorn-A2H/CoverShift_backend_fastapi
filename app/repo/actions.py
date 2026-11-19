@@ -11,7 +11,7 @@ from psycopg.types.json import Jsonb
 
 def insert_rules_confirmed(conn: psycopg.Connection, *, period_id: int, manager_id: int, text: str,
                            rules: list[dict], free_text: list[str]) -> int:
-    """rules 열 모양은 db/002 주석 그대로: {"rules":[{rule_key,template_key,params,source_text}], "free_text":[...]}."""
+    """rules 열 모양은 db/_old/002 주석 그대로: {"rules":[{rule_key,template_key,params,source_text}], "free_text":[...]}."""
     return conn.execute(
         """INSERT INTO manager_actions (period_id, manager_id, action, instruction, rules)
            VALUES (%s, %s, 'rules_confirmed', %s, %s) RETURNING action_id""",

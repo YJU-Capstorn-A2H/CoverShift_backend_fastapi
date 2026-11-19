@@ -41,7 +41,7 @@ def update_time_rule(conn: psycopg.Connection, store_id: int, rule_id: int, fiel
 
 
 def delete_time_rule(conn: psycopg.Connection, store_id: int, rule_id: int) -> bool:
-    """store_task_needs 는 ON DELETE CASCADE 로 같이 지워진다 (V9_ko 174)."""
+    """store_time_rules 를 참조하는 표는 없다 (store_task_needs 는 추천안에서 삭제, db/001)."""
     cur = conn.execute("DELETE FROM store_time_rules WHERE store_id = %s AND rule_id = %s", (store_id, rule_id))
     return cur.rowcount == 1
 

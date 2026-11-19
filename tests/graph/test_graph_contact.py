@@ -35,8 +35,10 @@ ONE_ON_D3 = ComposeResult(ok=True, assignments=[Assignment(1, D3, "work", time(9
 
 
 @pytest.fixture
-def contact_on(monkeypatch):
+def contact_on(monkeypatch, world):
+    """직원 연락을 켜고, 지금 있는 직원 전원을 LINE 에 연결해 둔다 (미연결 직원에게는 묻지 않는다)."""
     monkeypatch.setenv("ENABLE_CONTACT", "true")
+    world.q("UPDATE employees SET line_user_id = 'U-' || employee_id")
 
 
 def answer(cid, ans):
@@ -60,7 +62,7 @@ def test_contact_yes_fills_the_shortage(world, mem_graph, contact_on):
     assert waiting(g, "t") == w and world.count("line_outbox") == 1
     g.invoke(Command(resume={"decision": "approved", "manager_id": 1, "draft_id": None, "waived_keys": []}),
              cfg("t"))  # 연락 대기 중에 온 승인 → 버린다 (prototype_aegra E4 「지금 대기가 아니면 버린다」)
-    assert waiting(g, "t") == w and world.count("contact_log", "status = 'asked'") == 1
+    assert waiting(g, "t") == w and world.count("contact_requests", "status = 'asked'") == 1
 
     g.invoke(answer(1, "yes"), cfg("t"))
     r = waiting(g, "t")
@@ -68,14 +70,15 @@ def test_contact_yes_fills_the_shortage(world, mem_graph, contact_on):
     assert [v["check_code"] for v in r["violations"]] == []  # 부족이 채워졌고, 「가능」 답이 희망으로 들어가 V-3 도 없음
     got = world.q("SELECT employee_id, start_time, end_time FROM shift_assignments WHERE draft_id = 1 AND employee_id = 3")
     assert [(x["start_time"], x["end_time"]) for x in got] == [(time(13), time(13, 30))]
-    assert world.one("SELECT status FROM contact_log WHERE contact_id = 1")["status"] == "accepted"
+    assert world.one("SELECT status FROM contact_requests WHERE contact_id = 1")["status"] == "accepted"
     assert world.count("availability_submissions", "employee_id = 3 AND work_date = '2026-11-03'") == 0  # DB 희망은 그대로
 
 
 @pytest.mark.req("M-6")
 def test_contact_gives_up_after_3_asks(world, mem_graph, contact_on):
     for i in range(5, 9):  # 희망 미제출 알바 4명 더 (5~8)
-        world.q("INSERT INTO employees (store_id, name, is_regular, closing_ok) VALUES (1, %s, false, true)", (f"x{i}",))
+        world.q("""INSERT INTO employees (store_id, name, is_regular, closing_ok, line_user_id)
+                   VALUES (1, %s, false, true, %s)""", (f"x{i}", f"U-x{i}"))
     g = mem_graph(make_deps(ScriptedComposer([ONE_ON_D3]), validate=headcount_validate))
     g.invoke(START, cfg("t"))
     asked = []
@@ -84,7 +87,7 @@ def test_contact_gives_up_after_3_asks(world, mem_graph, contact_on):
         g.invoke(answer(w["contact_id"], "no"), cfg("t"))
     assert asked == [3, 5, 6]  # 3번 묻고 그만둔다 (가정 신규). 같은 사람에게 두 번 묻지 않는다
     assert w["type"] == "review" and [v["check_code"] for v in w["violations"]] == ["HEADCOUNT_SHORTAGE"]
-    assert [r["status"] for r in world.q("SELECT status FROM contact_log ORDER BY contact_id")] == ["declined"] * 3
+    assert [r["status"] for r in world.q("SELECT status FROM contact_requests ORDER BY contact_id")] == ["declined"] * 3
     assert world.count("line_outbox", "kind = 'contact_ask'") == 3
 
 
@@ -96,4 +99,25 @@ def test_contact_is_off_by_default(world, mem_graph, monkeypatch):
     g.invoke(START, cfg("t"))
     w = waiting(g, "t")
     assert w["type"] == "review" and [v["check_code"] for v in w["violations"]] == ["HEADCOUNT_SHORTAGE"]
-    assert world.count("contact_log") == 0 and world.count("line_outbox") == 0
+    assert world.count("contact_requests") == 0 and world.count("line_outbox") == 0
+
+
+@pytest.mark.req("M-6", "A-21")
+def test_contact_skips_employees_without_line(world, mem_graph, contact_on):
+    """LINE 미연결 직원에게는 묻지 않는다 — 메시지가 닿지 않아(no_recipient) 그래프가 오지 않을 답을 기다리게 된다."""
+    world.q("""INSERT INTO employees (store_id, name, is_regular, closing_ok, line_user_id)
+               VALUES (1, 'x5', false, true, 'U-x5')""")  # 직원 5: 연결됨
+    world.q("UPDATE employees SET line_user_id = NULL WHERE employee_id = 3")  # 1순위였던 직원 3 의 연결을 끊는다
+    g = mem_graph(make_deps(ScriptedComposer([ONE_ON_D3]), validate=headcount_validate))
+    g.invoke(START, cfg("t"))
+    assert waiting(g, "t")["employee_id"] == 5  # 3 을 건너뛰고 다음 후보에게
+    assert [r["employee_id"] for r in world.q("SELECT employee_id FROM line_outbox")] == [5]
+
+
+@pytest.mark.req("M-6", "A-21")
+def test_contact_asks_nobody_when_no_candidate_has_line(world, mem_graph, contact_on):
+    world.q("UPDATE employees SET line_user_id = NULL")
+    g = mem_graph(make_deps(ScriptedComposer([ONE_ON_D3]), validate=headcount_validate))
+    g.invoke(START, cfg("t"))
+    assert waiting(g, "t")["type"] == "review"  # 기다리지 않고 부족을 안은 채 점장에게
+    assert world.count("contact_requests") == 0 and world.count("line_outbox") == 0

@@ -29,7 +29,7 @@ def _put(api, token, *items):
 
 
 @pytest.mark.req("A-10", "A-17")
-def test_submission_links_reuse_same_url_and_line_stub_once_per_employee(two_stores):
+def test_submission_links_reuse_same_url_and_line_outbox_once_per_employee(two_stores):
     api = two_stores
     h = api.stores["A"]["h"]
     e1, e2 = api.employee(h, "Aさん"), api.employee(h, "Bさん", False)

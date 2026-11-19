@@ -16,7 +16,7 @@ from app.repo import employees as emp_repo
 from app.repo import line as line_repo
 from app.repo import periods as period_repo
 
-from .deps import AlreadyStarted, Busy, Conn, Manager, NotWaiting, Runner, StaleDraft, entrance_lock
+from .deps import AlreadyStarted, Busy, Conn, Manager, NotWaiting, Runner, StaleDraft, StubOnly, entrance_lock
 from .errors import BUSY_MESSAGE, ApiError, not_found
 from .routes_settings import load_period
 from .runstate import status_of
@@ -152,14 +152,26 @@ def get_draft(draft_id: int, m: Manager, conn: Conn):
 
 # ---------------------------------------------------------------- 직원 답장 (M-5, G16)
 
-@router.post("/line/reply", status_code=202)
+@router.post("/line/reply", status_code=202, dependencies=[StubOnly])
 def line_reply(body: ReplyIn, conn: Conn, runner: Runner):
-    """답장 버튼 [가능][불가]. 관리자 JWT 가 아니라 contact_id + 그 직원의 line_user_id 로 확인한다 (G16).
+    """스텁 화면의 답장 버튼 [가능][불가] (LINE_MODE=stub 전용). 본문의 line_user_id 를 그대로 믿는다 (G16)."""
+    return out(reply_to_contact(conn, runner, contact_id=body.contact_id, line_user_id=body.line_user_id,
+                                answer=body.answer))
 
-    연락이 없거나 다른 사람 것이면 같은 403 — contact_id 를 바꿔 가며 남의 연락이 있는지 알아낼 수 없게.
+
+def reply_to_contact(conn, runner, *, contact_id: int, line_user_id: str, answer: str) -> dict:
+    """직원의 답을 그래프에 넘기고 RunStatus 를 돌려준다. 받을 수 없는 답은 ApiError.
+
+    스텁 답장 버튼과 LINE 웹훅(postback, app/api/routes_line_webhook.py)이 같이 쓴다 — line_user_id 를 어디서
+    얻었는지만 다르다 (스텁: 요청 본문 / 웹훅: 서명이 검증된 이벤트의 source.userId).
+
+    - 관리자 JWT 가 아니라 contact_id + 그 직원의 line_user_id 로 확인한다 (G16).
+      연락이 없거나 다른 사람 것이면 같은 403 — contact_id 를 바꿔 가며 남의 연락이 있는지 알아낼 수 없게.
+    - 먼저 온 답이 이긴다: 답을 넘기면 그래프가 그 질문을 떠나므로, 같은 답이 또 와도 BUSY · NOT_WAITING ·
+      ALREADY_ANSWERED 중 하나로 거절된다 (같은 웹훅 이벤트가 두 번 와도 한 번만 반영).
     """
-    c = line_repo.contact_for_reply(conn, body.contact_id)
-    if c is None or c["line_user_id"] is None or c["line_user_id"] != body.line_user_id:
+    c = line_repo.contact_for_reply(conn, contact_id)
+    if c is None or c["line_user_id"] is None or c["line_user_id"] != line_user_id:
         raise ApiError(403, "NOT_YOUR_CONTACT", "이 연락에 답할 수 없습니다")
     if c["status"] != "asked":
         raise ApiError(409, "ALREADY_ANSWERED", "이미 답한 연락입니다")
@@ -170,12 +182,12 @@ def line_reply(body: ReplyIn, conn: Conn, runner: Runner):
         if st.get("state") == "running":
             raise _busy()
         waiting = st.get("waiting") or {}
-        if st.get("state") != "waiting_contact" or waiting.get("contact_id") != body.contact_id:
+        if st.get("state") != "waiting_contact" or waiting.get("contact_id") != contact_id:
             raise _not_waiting("지금은 이 연락의 답을 기다리고 있지 않습니다")
         try:
-            st = runner.resume(c["period_id"], c["thread_id"], {"contact_id": body.contact_id, "answer": body.answer})
+            st = runner.resume(c["period_id"], c["thread_id"], {"contact_id": contact_id, "answer": answer})
         except Busy:
             raise _busy()
         except NotWaiting:
             raise _not_waiting("지금은 이 연락의 답을 기다리고 있지 않습니다")
-    return out(st)
+    return st

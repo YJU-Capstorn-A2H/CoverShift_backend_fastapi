@@ -58,4 +58,4 @@ def test_real_validate_with_fake_composer(any_world, mem_graph, monkeypatch):
         assert after is None
         assert w0.count("shift_drafts", "status = 'confirmed'") == 1
         assert w0.count("line_outbox", "kind = 'shift_confirmed'") == w0.count("employees")
-        assert w0.count("validation_violations", "allowed_by IS NOT NULL") == len(waivable)
+        assert w0.count("violation_waivers") == len(waivable)

@@ -47,9 +47,9 @@ def _connect_default():
     return connect()
 
 
-def _send_default(conn, **kw) -> bool:
-    from app.line_stub import send
-    return send(conn, **kw)
+def _enqueue_default(conn, **kw) -> bool:
+    from app.line_outbox import enqueue
+    return enqueue(conn, **kw)
 
 
 def _settings_default():
@@ -66,7 +66,7 @@ class Deps:
     blocking: Callable = field(default_factory=lambda: _validate_fn("blocking"))
     staff_info: Callable[[int], dict] | None = None  # None → _staff_info_default() 를 처음 부를 때 고른다
     connect: Callable = _connect_default  # () -> 컨텍스트 매니저 (with 가 끝나면 커밋)
-    send: Callable = _send_default  # app.line_stub.send 와 같은 서명
+    enqueue: Callable = _enqueue_default  # app.line_outbox.enqueue 와 같은 서명. 발송함에 적기만 한다 (발송은 발송기)
     settings_factory: Callable[[], Any] = _settings_default
     _composer: Any = field(default=None, init=False, repr=False)
 

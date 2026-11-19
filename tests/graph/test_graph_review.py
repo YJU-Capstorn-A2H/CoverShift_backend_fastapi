@@ -1,13 +1,16 @@
 """점장 확인: 재편성 요청(상한 2) · 편집 저장 · 예외 허용 · 두 번 승인 · 틀 규칙 고정."""
 from __future__ import annotations
 
-from datetime import time
+from datetime import date, time
 
 import psycopg
 import pytest
 from langgraph.types import Command
+from psycopg.rows import dict_row
 
+from app.domain import Violation
 from app.graph import nodes
+from app.repo import drafts as repo
 from tests.graph.fakes import (BASE, MARK, ScriptedComposer, cfg, draft, make_deps, values, waiting)
 
 START = {"store_id": 1, "period_id": 1}
@@ -121,16 +124,46 @@ def test_qual_missing_cannot_be_waived_but_regular_absent_can(world, mem_graph):
     assert world.count("shift_drafts", "status = 'confirmed'") == 0 and world.count("line_outbox") == 0
     assert world.count("manager_actions", "action = 'approved'") == 0
 
-    # 지키는 쪽: 자격자 칸을 고친 편집 → REGULAR_ABSENT 만 남음 → 허용하고 승인 → 확정, allowed_by 기록
+    # 지키는 쪽: 자격자 칸을 고친 편집 → REGULAR_ABSENT 만 남음 → 허용하고 승인 → 확정, violation_waivers 에 기록
     g.invoke(review("edit_saved", 1, assignments=rows_of(*BASE, MARK["absent"])), cfg("t"))
     w = waiting(g, "t")
     assert w["blocked"] == [] and [v["check_code"] for v in w["violations"]] == ["REGULAR_ABSENT"]
     g.invoke(review("approved", 2, waived_keys=[w["violations"][0]["key"]]), cfg("t"))
     assert waiting(g, "t") is None
-    v = world.one("SELECT allowed_by, allowed_at FROM validation_violations WHERE draft_id = 2")
+    v = world.one("""SELECT w.allowed_by, w.allowed_at
+                     FROM violation_waivers w JOIN validation_violations v USING (violation_id) WHERE v.draft_id = 2""")
     assert v["allowed_by"] == 1 and v["allowed_at"] is not None
     # 막혔던 1번 안의 위반에는 허용이 붙지 않는다
-    assert world.count("validation_violations", "draft_id = 1 AND allowed_by IS NOT NULL") == 0
+    assert world.count("violation_waivers") == 1
+
+
+@pytest.mark.req("F-3", "F-8", "F-9")
+def test_confirm_draft_writes_waivers_once_and_never_for_non_waivable(world):
+    """repo.confirm_draft 만 직접 부른다 (그래프 없이): 허용은 violation_waivers 에 1행, 위반 표는 그대로."""
+    absent = {"check_code": "REGULAR_ABSENT", "severity": "required", "work_date": "2026-11-02", "employee_id": None,
+              "detail": {"time": "09:00"}}
+    qual = {"check_code": "QUAL_MISSING", "severity": "required", "work_date": "2026-11-02", "employee_id": None,
+            "detail": {"time": "09:00"}}
+    not_chosen = {"check_code": "REGULAR_ABSENT", "severity": "required", "work_date": "2026-11-03",
+                  "employee_id": None, "detail": {"time": "09:00"}}
+    with psycopg.connect(world.url, row_factory=dict_row) as conn:
+        did = repo.save_draft(conn, period_id=1, assignments=[], violations=[absent, qual, not_chosen],
+                              parent_draft_id=None)
+    before = world.q("SELECT * FROM validation_violations ORDER BY violation_id")
+    chosen = [Violation(v["check_code"], "required", date.fromisoformat(v["work_date"]), None, v["detail"]).key
+              for v in (absent, qual)]
+
+    # 점장이 고른 것 = REGULAR_ABSENT 1건 + QUAL_MISSING(예외 불가, V9_ko 479). 고르지 않은 위반은 그대로
+    for _ in range(2):  # 두 번째 = 중단 뒤 노드 재실행
+        with psycopg.connect(world.url, row_factory=dict_row) as conn:
+            repo.confirm_draft(conn, period_id=1, draft_id=did, manager_id=1, waived_keys=chosen)
+    waivers = world.q("""SELECT v.check_code, v.work_date, w.allowed_by, w.allowed_at, w.reason
+                         FROM violation_waivers w JOIN validation_violations v USING (violation_id)""")
+    assert [(r["check_code"], r["work_date"].isoformat(), r["allowed_by"], r["reason"]) for r in waivers] == [
+        ("REGULAR_ABSENT", "2026-11-02", 1, None)]
+    assert waivers[0]["allowed_at"] is not None
+    assert world.q("SELECT * FROM validation_violations ORDER BY violation_id") == before  # 추가 전용 — 고치지 않는다
+    assert world.count("manager_actions", "action = 'approved'") == 1
 
 
 @pytest.mark.req("A-16", "F-9")

@@ -6,14 +6,15 @@ from datetime import date
 
 from fastapi import APIRouter, Response
 
-from app import line_stub
+from app import line_api
 from app.config import get_settings
+from app.line_outbox import enqueue
 from app.repo import employees as emp_repo
 from app.repo import line as line_repo
 from app.repo import periods as period_repo
 from app.repo import submissions as sub_repo
 
-from .deps import Conn, Manager
+from .deps import Conn, Manager, StubOnly
 from .errors import ApiError, not_found
 from .routes_settings import load_period
 from .schemas import AvailabilityItemIn, AvailabilityPut, LinkIn, check_slot
@@ -31,8 +32,13 @@ def submit_url(token: str) -> str:
 
 
 def link_url(token: str) -> str:
-    # (가정 신규) 같은 이유. 화면이 이 경로에서 POST /api/line/link 를 부른다
-    return f"{get_settings().public_base_url.rstrip('/')}/line/link/{token}"
+    """LINE 연결 링크. 공식 계정 ID 가 설정돼 있으면 「토큰이 미리 채워진 대화창」을 여는 링크 —
+    직원이 그대로 보내면 웹훅이 보낸 사람(source.userId)을 그 직원에 연결한다 (G24, app/api/routes_line_webhook.py).
+    비어 있으면 스텁 화면 링크. (가정 신규) 화면 경로 모양: 화면이 이 경로에서 POST /api/line/link 를 부른다"""
+    settings = get_settings()
+    if settings.line_official_account_id:
+        return line_api.official_account_message_url(settings.line_official_account_id, token)
+    return f"{settings.public_base_url.rstrip('/')}/line/link/{token}"
 
 
 # ---------------------------------------------------------------- LINE 연결 (A-13)
@@ -48,16 +54,16 @@ def issue_link_token(employee_id: int, m: Manager, conn: Conn):
     token, expires_at = line_repo.issue_link_token(conn, m.store_id, employee_id)
     url = link_url(token)
     # 발급할 때마다 새 메시지 1건 (토큰이 바뀌므로 dedupe_key 도 바뀐다). 토큰 원문은 키에 넣지 않는다
-    line_stub.send(conn, store_id=m.store_id, employee_id=employee_id, kind="link_token",
-                   dedupe_key=f"link_token:{employee_id}:{hashlib.sha256(token.encode()).hexdigest()[:16]}",
-                   body={"text": "아래 링크를 열어 LINE 을 연결해 주세요", "url": url,
-                         "expires_at": expires_at.isoformat()})
+    # 아직 연결 전이라 발송기는 이 행을 「보낼 곳 없음」으로 끝낸다 — 링크는 점장이 발송함 화면에서 보고 직접 전한다
+    enqueue(conn, store_id=m.store_id, employee_id=employee_id, kind="link_token",
+            dedupe_key=f"link_token:{employee_id}:{hashlib.sha256(token.encode()).hexdigest()[:16]}",
+            body={"text": "아래 링크를 열어 LINE 을 연결해 주세요", "url": url, "expires_at": expires_at.isoformat()})
     return {"link_url": url, "expires_at": expires_at.isoformat()}
 
 
-@router.post("/line/link")
+@router.post("/line/link", dependencies=[StubOnly])
 def line_link(body: LinkIn, conn: Conn):
-    """토큰 인증 (V9_ko 159). 토큰 없음 · 만료 · 이미 쓴 토큰은 같은 400. 다른 직원이 쓰는 line_user_id 는 409."""
+    """스텁 전용(LINE_MODE=stub). 토큰 인증 (V9_ko 159). 토큰 없음 · 만료 · 이미 쓴 토큰은 같은 400. 다른 직원이 쓰는 line_user_id 는 409."""
     e = line_repo.find_by_link_token(conn, body.link_token)
     if e is None:
         raise ApiError(400, "INVALID_TOKEN", "연결 링크가 올바르지 않거나 기한이 지났습니다")
@@ -69,9 +75,9 @@ def line_link(body: LinkIn, conn: Conn):
 
 @router.post("/shift-periods/{period_id}/submission-links")
 def submission_links(period_id: int, m: Manager, conn: Conn):
-    """직원마다 링크 1개 (있으면 같은 링크). LINE 스텁 발송은 (직원, 기간)당 1번 (dedupe_key).
+    """직원마다 링크 1개 (있으면 같은 링크). LINE 발송은 (직원, 기간)당 1번 (dedupe_key).
 
-    (가정 신규) LINE 이 연결된 직원에게만 스텁 발송을 기록한다 — 연결 안 된 직원은 실제 LINE 이면 보낼 곳이 없다.
+    (가정 신규) LINE 이 연결된 직원에게만 발송함에 적는다 — 연결 안 된 직원은 실제 LINE 이면 보낼 곳이 없다.
     연결 뒤 다시 부르면 그 직원에게만 새로 기록된다. 링크 자체는 연결 여부와 관계없이 전원에게 만든다(점장이 직접 전달 가능).
     """
     p = load_period(conn, m, period_id)
@@ -80,7 +86,7 @@ def submission_links(period_id: int, m: Manager, conn: Conn):
         url = submit_url(r["token"])
         links.append({"employee_id": r["employee_id"], "url": url})
         if r["line_linked"]:
-            sent += line_stub.send(
+            sent += enqueue(
                 conn, store_id=m.store_id, employee_id=r["employee_id"], kind="submission_link",
                 dedupe_key=f"submission_link:{period_id}:{r['employee_id']}",
                 body={"text": f"{p['target_month']:%Y-%m} 근무 희망을 제출해 주세요", "url": url,
