@@ -238,8 +238,13 @@ class _Runs:
 # ---------------------------------------------------------------- LocalRunner (RUNNER=local)
 
 def default_graph_factory() -> GraphFactory:
+    # (추가 · 아즈키 11/19) GRAPH_IMPL=azuki 이면 아즈키의 그래프(app/graph)를, 그 외(기본)는 승혁의 그래프(app/graph_seung)를 쓴다
+    import os
     try:
-        from app.graph_seung.build import build_graph  # 그래프 에이전트 소유
+        if os.environ.get("GRAPH_IMPL", "seung") == "azuki":
+            from app.graph_azuki_bridge import build_graph
+        else:
+            from app.graph_seung.build import build_graph  # 그래프 에이전트 소유
     except ImportError as e:
         raise RuntimeError("app.graph_seung.build.build_graph 를 import 하지 못했습니다 (그래프가 아직 없거나 import 오류)") from e
     return build_graph
