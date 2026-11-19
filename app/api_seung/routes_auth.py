@@ -18,11 +18,11 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 def _invalid_code() -> ApiError:
     # 없음 · 만료 · 사용됨 모두 이 한 가지 (V9_ko 57, 149). 사유를 문장에도 넣지 않는다
-    return ApiError(400, "INVALID_CODE", "초대 코드가 올바르지 않습니다")
+    return ApiError(400, "INVALID_CODE", "招待コードが正しくありません")
 
 
 def _invalid_credentials() -> ApiError:
-    return ApiError(401, "INVALID_CREDENTIALS", "이메일 또는 비밀번호가 올바르지 않습니다")  # V9_ko 151
+    return ApiError(401, "INVALID_CREDENTIALS", "メールアドレスまたはパスワードが正しくありません")  # V9_ko 151
 
 
 def issue_jwt(manager_id: int, store_id: int) -> str:

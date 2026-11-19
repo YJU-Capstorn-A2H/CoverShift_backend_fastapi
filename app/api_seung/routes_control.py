@@ -42,14 +42,14 @@ def _busy() -> ApiError:
 
 
 def _already_started() -> ApiError:
-    return ApiError(409, "ALREADY_STARTED", "이 기간은 이미 편성을 시작했습니다")
+    return ApiError(409, "ALREADY_STARTED", "この期間は、すでに編成を開始しています")
 
 
 def _stale() -> ApiError:
-    return ApiError(409, "STALE_DRAFT", "화면의 편성안이 최신이 아닙니다. 새로 고친 뒤 다시 확인해 주세요")
+    return ApiError(409, "STALE_DRAFT", "画面の案が最新ではありません。再読み込みしてから、もう一度確認してください")
 
 
-def _not_waiting(msg: str = "지금은 승인 대기 상태가 아닙니다") -> ApiError:
+def _not_waiting(msg: str = "いまは承認待ちの状態ではありません") -> ApiError:
     return ApiError(409, "NOT_WAITING", msg)
 
 
@@ -96,7 +96,7 @@ def review(period_id: int, body: ReviewBody, m: Manager, conn: Conn, runner: Run
     """
     p = load_period(conn, m, period_id)
     if p["thread_id"] is None:
-        raise _not_waiting("아직 편성을 시작하지 않았습니다")
+        raise _not_waiting("まだ編成を開始していません")
     if isinstance(body, EditIn):
         _check_edit(conn, m.store_id, p, body)
     with entrance_lock(conn, lock_name(period_id)):
@@ -133,12 +133,12 @@ def _check_edit(conn, store_id: int, period: dict, body: EditIn) -> None:
     seen = set()
     for i, a in enumerate(body.assignments):
         if a.employee_id not in ids:
-            raise ApiError(422, "INVALID_ITEM", f"assignments[{i}]: employee_id {a.employee_id} 는 이 점포의 직원이 아닙니다")
+            raise ApiError(422, "INVALID_ITEM", f"assignments[{i}]: employee_id {a.employee_id} はこの店舗の従業員ではありません")
         if not (start <= a.work_date < end):
-            raise ApiError(422, "INVALID_ITEM", f"assignments[{i}]: {a.work_date} 는 이 기간의 날짜가 아닙니다")
+            raise ApiError(422, "INVALID_ITEM", f"assignments[{i}]: {a.work_date} はこの期間の日付ではありません")
         if (a.employee_id, a.work_date) in seen:
             # shift_assignments PK(draft, employee, date) — 1명 1일 1행 (V9_ko 336)
-            raise ApiError(422, "INVALID_ITEM", f"assignments[{i}]: 같은 직원 · 같은 날이 두 번 있습니다")
+            raise ApiError(422, "INVALID_ITEM", f"assignments[{i}]: 同じ従業員・同じ日が2回あります")
         seen.add((a.employee_id, a.work_date))
 
 
@@ -146,7 +146,7 @@ def _check_edit(conn, store_id: int, period: dict, body: EditIn) -> None:
 def get_draft(draft_id: int, m: Manager, conn: Conn):
     d = draft_view.get_draft(conn, m.store_id, draft_id)
     if d is None:
-        raise not_found("편성안")
+        raise not_found("案")
     return out(d)
 
 
@@ -160,22 +160,22 @@ def line_reply(body: ReplyIn, conn: Conn, runner: Runner):
     """
     c = line_repo.contact_for_reply(conn, body.contact_id)
     if c is None or c["line_user_id"] is None or c["line_user_id"] != body.line_user_id:
-        raise ApiError(403, "NOT_YOUR_CONTACT", "이 연락에 답할 수 없습니다")
+        raise ApiError(403, "NOT_YOUR_CONTACT", "この連絡には答えられません")
     if c["status"] != "asked":
-        raise ApiError(409, "ALREADY_ANSWERED", "이미 답한 연락입니다")
+        raise ApiError(409, "ALREADY_ANSWERED", "すでに答えた連絡です")
     if c["thread_id"] is None:
-        raise _not_waiting("편성이 진행 중이 아닙니다")
+        raise _not_waiting("編成は進行中ではありません")
     with entrance_lock(conn, lock_name(c["period_id"])):
         st = runner.status(c["period_id"], c["thread_id"])
         if st.get("state") == "running":
             raise _busy()
         waiting = st.get("waiting") or {}
         if st.get("state") != "waiting_contact" or waiting.get("contact_id") != body.contact_id:
-            raise _not_waiting("지금은 이 연락의 답을 기다리고 있지 않습니다")
+            raise _not_waiting("いまはこの連絡への返事を待っていません")
         try:
             st = runner.resume(c["period_id"], c["thread_id"], {"contact_id": body.contact_id, "answer": body.answer})
         except Busy:
             raise _busy()
         except NotWaiting:
-            raise _not_waiting("지금은 이 연락의 답을 기다리고 있지 않습니다")
+            raise _not_waiting("いまはこの連絡への返事を待っていません")
     return out(st)

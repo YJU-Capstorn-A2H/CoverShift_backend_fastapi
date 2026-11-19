@@ -16,7 +16,7 @@ from .routes_submit import router as submit_router
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="CoverShift MVP 입구 API", version="0.1.0")
+    app = FastAPI(title="CoverShift MVP 入口API", version="0.1.0")
     errors.install(app)
 
     # 라우트가 직접 잡지 못한 러너 예외도 같은 모양으로 (A-15, A-19)
@@ -26,15 +26,15 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(NotWaiting)
     async def _not_waiting(_: Request, e: Exception):
-        return errors.error_response(409, "NOT_WAITING", "지금은 기다리는 입력이 없습니다")
+        return errors.error_response(409, "NOT_WAITING", "いまは待っている入力がありません")
 
     @app.exception_handler(StaleDraft)
     async def _stale(_: Request, e: Exception):
-        return errors.error_response(409, "STALE_DRAFT", "화면의 편성안이 최신이 아닙니다")
+        return errors.error_response(409, "STALE_DRAFT", "画面の案が最新ではありません")
 
     @app.exception_handler(AlreadyStarted)
     async def _already(_: Request, e: Exception):
-        return errors.error_response(409, "ALREADY_STARTED", "이 기간은 이미 편성을 시작했습니다")
+        return errors.error_response(409, "ALREADY_STARTED", "この期間は、すでに編成を開始しています")
 
     for r in (auth_router, settings_router, submit_router, instructions_router, control_router):
         app.include_router(r)

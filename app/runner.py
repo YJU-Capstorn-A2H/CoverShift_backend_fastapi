@@ -2,7 +2,7 @@
 
 - 편성 기간 1개 = thread 1개 (V9_ko 98, 275 · F-10). thread_id 는 shift_periods.thread_id 에 API 가 적는다.
 - 대기 중에는 돌지 않고 체크포인트(Postgres)에 상태만 남는다. 재개는 같은 thread 에 Command(resume=…) (V9_ko 89 · F-11).
-- 같은 thread 에 요청이 겹치면 하나만 처리하고 나머지는 Busy → 409 「지금 편성을 처리하고 있습니다」 (V9_ko 509 · A-15).
+- 같은 thread 에 요청이 겹치면 하나만 처리하고 나머지는 Busy → 409 「いま編成を処理しています」 (V9_ko 509 · A-15).
   잠금 = Postgres advisory lock `pg_try_advisory_lock(hashtextextended(thread_id, 0))` 를 전용 연결에서 run 이 끝날 때까지 쥔다.
   근거: prototype_aegra/README.md 「대안 A」 — 잠금 없음 5/5 깨짐 / 잠금 있음 5/5 정상.
   잠금을 쥔 프로세스가 죽으면 0.01초 만에 풀리지만 Aegra 서버의 run 은 계속 돈다 → AegraRunner 는 잠금을 잡은 뒤
@@ -26,7 +26,7 @@ from app.config import get_settings
 
 log = logging.getLogger("runner")
 
-BUSY_MESSAGE = "지금 편성을 처리하고 있습니다"  # V9_ko 509
+BUSY_MESSAGE = "いま編成を処理しています"  # V9_ko 509
 
 STATES = ("not_started", "running", "waiting_review", "waiting_contact", "confirmed", "error")
 WAIT_STATE = {"review": "waiting_review", "contact": "waiting_contact"}
@@ -98,7 +98,7 @@ def status_from_parts(period_id: int, thread_id: str, *, has_checkpoint: bool, i
         value = interrupts[0][1]
         kind = value.get("type") if isinstance(value, dict) else None
         if kind not in WAIT_STATE:
-            return run_status(period_id, thread_id, "error", error=f"알 수 없는 대기 type: {kind!r}")
+            return run_status(period_id, thread_id, "error", error=f"不明な待ち type: {kind!r}")
         return run_status(period_id, thread_id, WAIT_STATE[kind], waiting=value)
     if not has_checkpoint:
         return run_status(period_id, thread_id, "not_started")
@@ -106,7 +106,7 @@ def status_from_parts(period_id: int, thread_id: str, *, has_checkpoint: bool, i
         return run_status(period_id, thread_id, "confirmed")  # 계약: 그래프가 끝남(다음 노드 없음) = 확정
     # 다음 노드가 남았는데 도는 run 도 대기도 없다 = 실행 도중 프로세스가 죽은 경우 (자동 이어 돌리기는 하지 않는다)
     return run_status(period_id, thread_id, "error",
-                      error=f"편성이 중간에 멈췄습니다 (다음 노드 {list(next_nodes)}). 운영자 확인이 필요합니다")
+                      error=f"編成が途中で止まりました(次のノード {list(next_nodes)})。運営の確認が必要です")
 
 
 def match_payload(waiting: dict, payload: dict) -> None:
@@ -118,16 +118,16 @@ def match_payload(waiting: dict, payload: dict) -> None:
     kind = waiting.get("type")
     if kind == "review":
         if "decision" not in payload:
-            raise NotWaiting("승인 대기 중입니다. 직원 답장은 지금 받을 수 없습니다")
+            raise NotWaiting("承認待ちです。従業員の返事は、いまは受け付けられません")
         if payload.get("draft_id") != waiting.get("draft_id"):
-            raise StaleDraft(f"본 안(draft {payload.get('draft_id')})이 최신 안(draft {waiting.get('draft_id')})이 아닙니다")
+            raise StaleDraft(f"見ている案(draft {payload.get('draft_id')})が最新の案(draft {waiting.get('draft_id')})ではありません")
     elif kind == "contact":
         if "contact_id" not in payload:
-            raise NotWaiting("직원 답장 대기 중입니다. 승인은 지금 받을 수 없습니다")
+            raise NotWaiting("従業員の返事を待っています。承認は、いまは受け付けられません")
         if payload.get("contact_id") != waiting.get("contact_id"):
-            raise NotWaiting(f"지금 기다리는 연락(contact {waiting.get('contact_id')})이 아닙니다")
+            raise NotWaiting(f"いま待っている連絡(contact {waiting.get('contact_id')})ではありません")
     else:
-        raise NotWaiting(f"알 수 없는 대기 type: {kind!r}")
+        raise NotWaiting(f"不明な待ち type: {kind!r}")
 
 
 # ---------------------------------------------------------------- thread 잠금 (A-15, V9_ko 509)
@@ -330,7 +330,7 @@ class LocalRunner:
         try:
             snap = self._graph.get_state(self._config(thread_id))
             if snap.created_at is not None or snap.next or snap.values:
-                raise AlreadyStarted(f"thread {thread_id} 는 이미 시작됐습니다")
+                raise AlreadyStarted(f"thread {thread_id} はすでに開始されています")
             self._runs.spawn(thread_id, self._invoke(thread_id, start_input(period_id)), lock)
         except BaseException:
             lock.release()
@@ -344,7 +344,7 @@ class LocalRunner:
         try:
             st, pending = self._checkpoint_status(period_id, thread_id)
             if st["state"] not in WAIT_STATE.values():  # resume 은 status 가 waiting_* 일 때만 (오류 난 대기에 또 넣지 않는다)
-                raise NotWaiting(f"재개할 대기가 없습니다 (state={st['state']})")
+                raise NotWaiting(f"再開できる待ちがありません(state={st['state']})")
             iid, value = pending[0]
             match_payload(value, payload)
             # {interrupt id: 값} — 확인한 바로 그 대기에만 답한다 (대기가 하나면 Command(resume=payload) 와 같다)
@@ -479,7 +479,7 @@ class AegraRunner:
                                         metadata={"period_id": period_id})
             self._wait_idle(thread_id)
             if self._has_checkpoint(self._get_state(thread_id)):
-                raise AlreadyStarted(f"thread {thread_id} 는 이미 시작됐습니다")
+                raise AlreadyStarted(f"thread {thread_id} はすでに開始されています")
             run = self._client.runs.create(thread_id, self._assistant, input=start_input(period_id),
                                            multitask_strategy="reject")
             self._runs.spawn(thread_id, self._watch(thread_id, run["run_id"]), lock)
@@ -494,7 +494,7 @@ class AegraRunner:
             self._wait_idle(thread_id)
             st, pending = self._checkpoint_status(period_id, thread_id)
             if st["state"] not in WAIT_STATE.values():
-                raise NotWaiting(f"재개할 대기가 없습니다 (state={st['state']})")
+                raise NotWaiting(f"再開できる待ちがありません(state={st['state']})")
             iid, value = pending[0]
             match_payload(value, payload)
             command = {"resume": {iid: payload}} if iid else {"resume": payload}  # = Command(resume=…)

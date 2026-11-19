@@ -40,7 +40,7 @@ def test_redraft_requests_capped_at_2(world, mem_graph):
     g.invoke(review("redraft_requested", 3, instruction="C"), cfg("t"))
     w = waiting(g, "t")
     assert (w["draft_id"], w["manager_request_count"]) == (3, 2) and len(comp.calls) == 3
-    assert any("2회까지" in n for n in w["notes"])
+    assert any("2回まで" in n for n in w["notes"])
     acts = world.q("SELECT draft_id, instruction FROM manager_actions WHERE action = 'redraft_requested' ORDER BY 1")
     assert [(a["draft_id"], a["instruction"]) for a in acts] == [(1, "A"), (2, "B")]
     assert [r["parent_draft_id"] for r in world.q("SELECT parent_draft_id FROM shift_drafts ORDER BY draft_id")] == [
@@ -98,7 +98,7 @@ def test_edit_saved_with_unstorable_row_is_refused(world, mem_graph, bad_row):
     g.invoke(START, cfg("t"))
     g.invoke(review("edit_saved", 1, assignments=[bad_row]), cfg("t"))
     w = waiting(g, "t")
-    assert w["draft_id"] == 1 and any("편집 내용을 받지 않았다" in n for n in w["notes"])
+    assert w["draft_id"] == 1 and any("編集内容を受け付けませんでした" in n for n in w["notes"])
     assert world.count("shift_drafts") == 1 and world.count("manager_actions") == 0
 
 

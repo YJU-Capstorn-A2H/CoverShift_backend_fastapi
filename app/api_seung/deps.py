@@ -92,7 +92,7 @@ class CurrentManager:
     store_name: str
 
 
-def _unauthorized(msg: str = "로그인이 필요합니다") -> ApiError:
+def _unauthorized(msg: str = "ログインが必要です") -> ApiError:
     return ApiError(401, "UNAUTHORIZED", msg)
 
 
@@ -103,7 +103,7 @@ def jwt_secret() -> str:
     """
     secret = get_settings().jwt_secret
     if not secret.strip():
-        raise ApiError(500, "SERVER_MISCONFIGURED", "서버 설정(JWT_SECRET)이 비어 있습니다")
+        raise ApiError(500, "SERVER_MISCONFIGURED", "サーバー設定(JWT_SECRET)が空です")
     return secret
 
 
@@ -122,17 +122,17 @@ def current_manager(conn: Conn, authorization: Annotated[str | None, Header()] =
     else:
         scheme, _, token = authorization.partition(" ")
         if scheme.lower() != "bearer" or not token.strip():
-            raise _unauthorized("Authorization 헤더는 Bearer 토큰이어야 합니다")
+            raise _unauthorized("Authorization ヘッダーは Bearer トークンにしてください")
         try:
             claims = jwt.decode(token.strip(), jwt_secret(), algorithms=["HS256"],
                                 options={"require": ["exp", "sub"]})
             manager_id = int(claims["sub"])
             claim_store = int(claims["store_id"]) if claims.get("store_id") is not None else None
         except (jwt.PyJWTError, ValueError, TypeError):
-            raise _unauthorized("로그인이 만료되었거나 올바르지 않습니다")
+            raise _unauthorized("ログインの有効期限が切れているか、正しくありません")
     row = managers.get_active_manager(conn, manager_id)
     if row is None or (claim_store is not None and claim_store != row["store_id"]):
-        raise _unauthorized("이 계정은 사용할 수 없습니다. 다시 로그인해 주세요")
+        raise _unauthorized("このアカウントは使えません。もう一度ログインしてください")
     return CurrentManager(row["manager_id"], row["store_id"], row["email"], row["store_name"])
 
 

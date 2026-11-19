@@ -53,9 +53,9 @@ def _hm(t: time) -> str:
 def _slot_time(v, what: str) -> time:
     t = time.fromisoformat(v) if isinstance(v, str) else v
     if not isinstance(t, time):
-        raise ValueError(f"{what} 시각이 아님: {v!r}")
+        raise ValueError(f"{what} は時刻ではありません: {v!r}")
     if t.minute not in (0, 30) or t.second or t.microsecond:
-        raise ValueError(f"{what} 는 30분 단위: {v!r}")  # V9_ko 165, 447 · DB CHECK (shift_assignments)
+        raise ValueError(f"{what} は30分単位: {v!r}")  # V9_ko 165, 447 · DB CHECK (shift_assignments)
     return t
 
 
@@ -66,7 +66,7 @@ def normalize_rows(rows, state: ShiftState) -> list[dict]:
     같은 사람・같은 날 두 행은 여기서 막지 않는다 — 그것은 검증의 DOUBLE_BOOKING(V-8) 이 잡는다.
     """
     if not isinstance(rows, list):
-        raise ValueError("assignments 는 목록이어야 한다")
+        raise ValueError("assignments は配列にしてください")
     ids = {e["employee_id"] for e in state["llm_all_staff"]}
     month = date.fromisoformat(state["period"]["target_month"])
     out = []
@@ -76,33 +76,33 @@ def normalize_rows(rows, state: ShiftState) -> list[dict]:
                 r = asg_to_dict(r)
             emp = _int(r.get("employee_id"))
             if emp not in ids:
-                raise ValueError(f"이 점포의 직원이 아님: {r.get('employee_id')!r}")
+                raise ValueError(f"この店舗の従業員ではありません: {r.get('employee_id')!r}")
             wd = date.fromisoformat(r["work_date"]) if isinstance(r["work_date"], str) else r["work_date"]
             if not isinstance(wd, date) or (wd.year, wd.month) != (month.year, month.month):
-                raise ValueError(f"기간 밖의 날짜: {r['work_date']!r}")
+                raise ValueError(f"期間外の日付: {r['work_date']!r}")
             kind = r.get("kind") or "work"
             st, et = r.get("start_time"), r.get("end_time")
             bs, be = r.get("break_start"), r.get("break_end")
             if kind == "work":
                 if st is None or et is None:
-                    raise ValueError("근무(work)는 시작・종료가 필요")
+                    raise ValueError("勤務(work)には開始・終了が必要")
                 st, et = _slot_time(st, "start_time"), _slot_time(et, "end_time")
                 if et <= st:
-                    raise ValueError("end_time > start_time 이어야 한다")
+                    raise ValueError("end_time は start_time より後にしてください")
                 if (bs is None) != (be is None):
-                    raise ValueError("휴게는 시작・종료를 같이")
+                    raise ValueError("休憩は開始・終了を両方入れる")
                 if bs is not None:
                     bs = time.fromisoformat(bs) if isinstance(bs, str) else bs
                     be = time.fromisoformat(be) if isinstance(be, str) else be
                     if not (st <= bs < be <= et):
-                        raise ValueError("휴게는 근무 시간 안")
+                        raise ValueError("休憩は勤務時間の中")
             elif kind == "paid_leave":
                 if any(x is not None for x in (st, et, bs, be)):
-                    raise ValueError("유급(paid_leave)은 시각이 없다")
+                    raise ValueError("有給(paid_leave)には時刻を入れない")
             else:
-                raise ValueError(f"kind 는 work / paid_leave: {kind!r}")
+                raise ValueError(f"kind は work か paid_leave: {kind!r}")
         except (KeyError, TypeError, ValueError, AttributeError) as e:
-            raise ValueError(f"{i + 1}번째 행: {e}") from None
+            raise ValueError(f"{i + 1}行目: {e}") from None
         out.append({"employee_id": emp, "work_date": wd.isoformat(), "kind": kind,
                     "start_time": _hm(st) if st else None, "end_time": _hm(et) if et else None,
                     "break_start": _hm(bs) if bs else None, "break_end": _hm(be) if be else None})
@@ -227,7 +227,7 @@ def auto_draft(state: ShiftState, deps) -> Command:
     return Command(goto="validate", update={
         "draft_store_shift": with_paid_leave([], state["staff_availability"]),
         "shortages": _shortages(state, []), "compose_error": err,
-        "notes": [f"자동 편성이 초안을 만들지 못했다 ({err}). 직접 편집하거나 재편성을 요청한다."]})
+        "notes": [f"自動編成が案を作れませんでした ({err})。直接編集するか、再編成を依頼してください。"]})
 
 
 def validate(state: ShiftState, deps) -> Command:
@@ -342,7 +342,7 @@ def contact(state: ShiftState, deps) -> Command:
         cid = repo.ask_contact(conn, period_id=state["period_id"], **pick)
         deps.send(conn, store_id=state["store_id"], employee_id=pick["employee_id"], kind="contact_ask",
                   dedupe_key=f"contact:{cid}",
-                  body={"text": f"{pick['work_date']} {pick['start_time']}~{pick['end_time']} 근무 가능하신가요?",
+                  body={"text": f"{pick['work_date']} {pick['start_time']}~{pick['end_time']} 勤務できますか?",
                         "contact_id": cid, "buttons": ["yes", "no"], **pick})
     pending = {"type": "contact", "contact_id": cid, **pick}  # ContactWait (API_CONTRACT)
     log.info("contact ask contact_id=%s employee=%s %s %s~%s", cid, pick["employee_id"], pick["work_date"],
@@ -411,7 +411,7 @@ def manager_review(state: ShiftState, deps) -> Command:
         return Command(goto="manager_review")
     decision, mid = p.get("decision"), _int(p.get("manager_id"))
     if mid is None:  # 승인자 ID 는 반드시 남긴다 (F-7, V9_ko 54)
-        return Command(goto="manager_review", update={"review_error": "manager_id 가 없는 조작은 받지 않는다"})
+        return Command(goto="manager_review", update={"review_error": "manager_id のない操作は受け付けません"})
     base = {"reviewer_id": mid, "review_error": None}
     if decision == "approved":
         waived = sorted({str(k) for k in p.get("waived_keys") or []})
@@ -421,7 +421,7 @@ def manager_review(state: ShiftState, deps) -> Command:
         n = state.get("manager_request_count", 0)
         if n >= s.manager_request_limit:  # F-2: 점장 요청 2회 (V9_ko 479)
             return Command(goto="manager_review", update={
-                "review_error": f"재편성 요청은 {s.manager_request_limit}회까지다. 승인하거나 직접 편집한다."})
+                "review_error": f"再編成の依頼は{s.manager_request_limit}回までです。承認するか、直接編集してください。"})
         instr = p.get("instruction")
         instr = instr.strip() if isinstance(instr, str) and instr.strip() else None
         return Command(goto="request_redraft", update={**base, "decision": "redraft_requested", "blocked": [],
@@ -430,10 +430,10 @@ def manager_review(state: ShiftState, deps) -> Command:
         try:
             rows = normalize_rows(p.get("assignments"), state)
         except ValueError as e:
-            return Command(goto="manager_review", update={"review_error": f"편집 내용을 받지 않았다: {e}"})
+            return Command(goto="manager_review", update={"review_error": f"編集内容を受け付けませんでした: {e}"})
         return Command(goto="apply_edit", update={**base, "decision": "edit_saved", "blocked": [],
                                                    "review_input": {"assignments": rows}})
-    return Command(goto="manager_review", update={"review_error": f"알 수 없는 조작: {decision!r}"})
+    return Command(goto="manager_review", update={"review_error": f"不明な操作: {decision!r}"})
 
 
 def check_approval(state: ShiftState, deps) -> Command:
@@ -497,7 +497,7 @@ def commit_notify(state: ShiftState, deps) -> dict:
             leave = [r["work_date"] for r in rows if r["employee_id"] == eid and r["kind"] == "paid_leave"]
             sent += deps.send(conn, store_id=state["store_id"], employee_id=eid, kind="shift_confirmed",
                               dedupe_key=f"confirm:{did}:{eid}",
-                              body={"text": f"{month} 시프트가 확정되었습니다. 출근 {len(work)}일.", "draft_id": did,
+                              body={"text": f"{month} シフトが確定しました。出勤 {len(work)}日。", "draft_id": did,
                                     "work_days": work, "paid_leave_days": leave})
     log.info("commit_notify draft_id=%s confirmed_by=%s 통지 %d건(새로 보낸 것)", did, mid, sent)
     return {"notified": True}

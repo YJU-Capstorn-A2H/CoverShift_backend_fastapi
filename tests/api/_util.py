@@ -4,7 +4,7 @@ from __future__ import annotations
 FUTURE = "2099-01-01T00:00:00+09:00"
 PAST = "2000-01-01T00:00:00+09:00"
 PW = "password-123"
-BUSY_MESSAGE = "지금 편성을 처리하고 있습니다"  # V9_ko 509 — 화면 문장이므로 문자열 그대로 비교한다
+BUSY_MESSAGE = "いま編成を処理しています"  # V9_ko 509 — 화면 문장이므로 문자열 그대로 비교한다
 
 
 def err(r) -> tuple[int, str]:

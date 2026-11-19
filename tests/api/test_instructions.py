@@ -45,7 +45,7 @@ def test_preview_calls_llm_once_with_id_only_context_and_saves_nothing(period):
          "params": {"count": 3, "start": "17:00", "end": "20:00", "weekday": 5}, "source_text": "금요일 저녁은 3명"}]
     assert body["free_text"] == ["가능하면 신입은 오전에"]
     # LLM 이 남의 점포 직원 ID 를 내면 규칙에서 빼고 rejected 로 (가정 신규)
-    assert [x["reason"] for x in body["rejected"]] == ["unknown", f"staff_id {api.other} 는 이 점포의 직원이 아닙니다"]
+    assert [x["reason"] for x in body["rejected"]] == ["unknown", f"staff_id {api.other} はこの店舗の従業員ではありません"]
     # LLM 에 넘긴 문맥: 이 기간 · 이 점포 직원 ID 만 · 이름 없음 (F-6)
     assert len(api.composer.calls) == 1
     ctx, text = api.composer.calls[0]

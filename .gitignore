@@ -37,3 +37,6 @@ desktop.ini
 # ===== フロント(Vue)を同じ場所に置く場合 / 프론트(Vue)를 같은 곳에 둘 경우 =====
 node_modules/
 dist/
+
+# 本物LLMテストの出力
+real_llm_out/

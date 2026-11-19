@@ -46,10 +46,10 @@ def copy_time_rules(body: CopyIn, m: Manager, conn: Conn):
     targets = sorted(set(body.to_weekdays))
     if body.from_weekday in targets:
         # 원본 요일을 대상에 넣으면 「지우고 복사」가 원본을 지운다
-        raise ApiError(422, "INVALID_COPY", "복사할 요일과 대상 요일이 같습니다")
+        raise ApiError(422, "INVALID_COPY", "コピー元とコピー先の曜日が同じです")
     if store_repo.count_rules(conn, m.store_id, body.from_weekday) == 0:
         # (가정 신규) 원본 요일에 규칙이 없으면 대상 요일 규칙만 지워지고 끝난다 → 실수로 보고 거부한다
-        raise ApiError(422, "NO_SOURCE_RULES", "복사할 요일에 시간대 규칙이 없습니다")
+        raise ApiError(422, "NO_SOURCE_RULES", "コピー元の曜日に時間帯ルールがありません")
     return {"created": store_repo.copy_time_rules(conn, m.store_id, body.from_weekday, targets)}
 
 
@@ -57,14 +57,14 @@ def copy_time_rules(body: CopyIn, m: Manager, conn: Conn):
 def patch_time_rule(rule_id: int, body: TimeRulePatch, m: Manager, conn: Conn):
     row = store_repo.update_time_rule(conn, m.store_id, rule_id, body.model_dump(exclude_unset=True))
     if row is None:
-        raise not_found("시간대 규칙")
+        raise not_found("時間帯ルール")
     return out(row)
 
 
 @router.delete("/store/time-rules/{rule_id}", status_code=204)
 def delete_time_rule(rule_id: int, m: Manager, conn: Conn):
     if not store_repo.delete_time_rule(conn, m.store_id, rule_id):
-        raise not_found("시간대 규칙")
+        raise not_found("時間帯ルール")
     return Response(status_code=204)
 
 
@@ -84,7 +84,7 @@ def create_employee(body: EmployeeIn, m: Manager, conn: Conn):
 def get_employee(employee_id: int, m: Manager, conn: Conn):
     row = emp_repo.get_employee(conn, m.store_id, employee_id)
     if row is None:
-        raise not_found("직원")
+        raise not_found("従業員")
     return out(row)
 
 
@@ -93,10 +93,10 @@ def patch_employee(employee_id: int, body: EmployeePatch, m: Manager, conn: Conn
     fields = body.model_dump(exclude_unset=True)
     for k in ("name", "is_regular", "has_qualification", "closing_ok"):
         if k in fields and fields[k] is None:
-            raise ApiError(422, "VALIDATION_ERROR", f"{k} 는 null 로 바꿀 수 없습니다")
+            raise ApiError(422, "VALIDATION_ERROR", f"{k} はnullに変更できません")
     row = emp_repo.update_employee(conn, m.store_id, employee_id, fields)
     if row is None:
-        raise not_found("직원")
+        raise not_found("従業員")
     return out(row)
 
 
@@ -116,17 +116,17 @@ def create_task(body: TaskIn, m: Manager, conn: Conn):
 def patch_task(task_id: int, body: TaskPatch, m: Manager, conn: Conn):
     fields = body.model_dump(exclude_unset=True)
     if any(v is None for v in fields.values()):
-        raise ApiError(422, "VALIDATION_ERROR", "name · sort_order 는 null 로 바꿀 수 없습니다")
+        raise ApiError(422, "VALIDATION_ERROR", "name · sort_order はnullに変更できません")
     row = emp_repo.update_task(conn, m.store_id, task_id, fields)
     if row is None:
-        raise not_found("업무")
+        raise not_found("業務")
     return out(row)
 
 
 @router.delete("/tasks/{task_id}", status_code=204)
 def delete_task(task_id: int, m: Manager, conn: Conn):
     if not emp_repo.delete_task(conn, m.store_id, task_id):
-        raise not_found("업무")
+        raise not_found("業務")
     return Response(status_code=204)
 
 
@@ -142,7 +142,7 @@ def period_out(conn, runner, p: dict) -> dict:
 def load_period(conn, m, period_id: int, *, for_update: bool = False) -> dict:
     p = period_repo.get_period(conn, m.store_id, period_id, for_update=for_update)
     if p is None:
-        raise not_found("편성 기간")
+        raise not_found("シフト期間")
     return p
 
 
@@ -166,10 +166,10 @@ def patch_period(period_id: int, body: PeriodPatch, m: Manager, conn: Conn, runn
     fields = body.model_dump(exclude_unset=True)
     for k in ("submission_deadline", "designated_off_days"):
         if k in fields and fields[k] is None:
-            raise ApiError(422, "VALIDATION_ERROR", f"{k} 는 null 로 바꿀 수 없습니다")
+            raise ApiError(422, "VALIDATION_ERROR", f"{k} はnullに変更できません")
     row = period_repo.update_period(conn, m.store_id, period_id, fields)
     if row is None:
-        raise not_found("편성 기간")
+        raise not_found("シフト期間")
     return period_out(conn, runner, row)
 
 

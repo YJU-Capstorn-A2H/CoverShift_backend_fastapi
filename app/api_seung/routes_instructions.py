@@ -41,10 +41,10 @@ def scope_problem(r: TemplateRule, employee_ids: set[int], start: date, end: dat
     """
     staff_id = getattr(r.params, "staff_id", None)
     if staff_id is not None and staff_id not in employee_ids:
-        return f"staff_id {staff_id} 는 이 점포의 직원이 아닙니다"
+        return f"staff_id {staff_id} はこの店舗の従業員ではありません"
     d = getattr(r.params, "date", None)
     if d is not None and not (start <= d < end):
-        return f"date {d} 는 이 기간의 날짜가 아닙니다"
+        return f"date {d} はこの期間の日付ではありません"
     return None
 
 
@@ -57,12 +57,12 @@ def preview(period_id: int, body: InstructionIn, m: Manager, conn: Conn, compose
         res = composer.instruction_to_rules(ctx, mask_names(body.text, store_employees(conn, m.store_id)))
     except Exception as e:  # noqa: BLE001 — LLM 쪽 예외 형은 llm 에이전트 소유
         log.warning("instruction_to_rules 실패 period=%s: %r", period_id, e)
-        raise ApiError(502, "LLM_ERROR", "지시를 틀 규칙으로 바꾸지 못했습니다. 잠시 뒤 다시 시도해 주세요")
+        raise ApiError(502, "LLM_ERROR", "指示を枠のルールに変換できませんでした。少し待ってから、もう一度試してください")
     start, end = period_repo.month_range(p["target_month"])
     ids = {e.employee_id for e in ctx.employees}
     rules, rejected, keys = [], list(res.rejected), set()
     for r in res.rules:
-        why = scope_problem(r, ids, start, end) or (f"rule_key {r.rule_key} 가 겹칩니다" if r.rule_key in keys else None)
+        why = scope_problem(r, ids, start, end) or (f"rule_key {r.rule_key} が重複しています" if r.rule_key in keys else None)
         if why:
             rejected.append({"raw": rule_out(r), "reason": why})
             continue
@@ -81,12 +81,12 @@ def confirm(period_id: int, body: ConfirmIn, m: Manager, conn: Conn):
         try:
             tr = parse_template_rule(r.rule_key, r.template_key, r.params, r.source_text)
         except ValueError as e:  # pydantic ValidationError 도 ValueError 의 하위 클래스
-            raise ApiError(422, "INVALID_RULE", f"rules[{i}] ({r.rule_key}): 틀에 맞지 않습니다 — {_short(e)}")
+            raise ApiError(422, "INVALID_RULE", f"rules[{i}] ({r.rule_key}): 枠に合いません — {_short(e)}")
         why = scope_problem(tr, ids, start, end)
         if why:
             raise ApiError(422, "INVALID_RULE", f"rules[{i}] ({r.rule_key}): {why}")
         if tr.rule_key in keys:
-            raise ApiError(422, "INVALID_RULE", f"rules[{i}]: rule_key {tr.rule_key} 가 겹칩니다")  # 기간 안에서 유일
+            raise ApiError(422, "INVALID_RULE", f"rules[{i}]: rule_key {tr.rule_key} が重複しています")  # 기간 안에서 유일
         keys.add(tr.rule_key)
         checked.append(rule_out(tr))
     action_id = action_repo.insert_rules_confirmed(conn, period_id=period_id, manager_id=m.manager_id,

@@ -14,7 +14,7 @@ from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field
 def check_slot(v: time | None) -> time | None:
     """30분 단위 (V9_ko 165, 447)."""
     if v is not None and (v.minute not in (0, 30) or v.second or v.microsecond):
-        raise ValueError("시각은 30분 단위(HH:00 / HH:30)여야 합니다")
+        raise ValueError("時刻は30分単位(HH:00 / HH:30)にしてください")
     return v
 
 
@@ -40,7 +40,7 @@ class RegisterIn(In):
     @classmethod
     def _bcrypt_limit(cls, v: str) -> str:
         if len(v.encode()) > 72:
-            raise ValueError("비밀번호는 72바이트 이하여야 합니다")
+            raise ValueError("パスワードは72バイト以下にしてください")
         return v
 
 
@@ -80,7 +80,7 @@ def _weekdays(v: list[int] | None) -> list[int] | None:
     if v is None:
         return v
     if len(set(v)) != len(v):
-        raise ValueError("fixed_weekdays 에 같은 요일이 두 번 있습니다")
+        raise ValueError("fixed_weekdays に同じ曜日が2回あります")
     return sorted(v)
 
 
@@ -191,16 +191,16 @@ class AssignmentIn(In):
     def _shape(self):
         # shift_assignments 의 CHECK 와 같은 규칙. 그래프가 저장하기 전에 입구에서 먼저 돌려준다
         if self.kind == "work" and (self.start_time is None or self.end_time is None):
-            raise ValueError("work 는 start_time · end_time 이 필요합니다")
+            raise ValueError("work には start_time・end_time が必要です")
         if self.kind == "paid_leave" and (self.start_time is not None or self.end_time is not None):
-            raise ValueError("paid_leave 는 시각이 없어야 합니다")
+            raise ValueError("paid_leave には時刻を入れません")
         if self.start_time is not None and self.end_time is not None and self.end_time <= self.start_time:
-            raise ValueError("end_time 은 start_time 보다 늦어야 합니다")
+            raise ValueError("end_time は start_time より後にしてください")
         if (self.break_start is None) != (self.break_end is None):
-            raise ValueError("break_start · break_end 는 둘 다 있거나 둘 다 없어야 합니다")
+            raise ValueError("break_start・break_end は、両方あるか、両方ないかにしてください")
         if self.break_start is not None:
             if self.kind != "work" or not (self.start_time <= self.break_start < self.break_end <= self.end_time):
-                raise ValueError("휴게는 근무 시간 안이어야 합니다")
+                raise ValueError("休憩は勤務時間の中にしてください")
         return self
 
 
